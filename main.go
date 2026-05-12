@@ -17,6 +17,7 @@ func main() {
 	ebiten.SetWindowSize(screenWidth, screenHeight)
 	ebiten.SetWindowTitle("Neon Space Survivor")
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeDisabled)
+	ebiten.SetFullscreen(true)
 	InitAudio()
 	LoadSplash()
 	game := NewGame(true)
