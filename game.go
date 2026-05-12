@@ -42,6 +42,8 @@ type Game struct {
 	started        bool
 	kills          int
 	splashTimer     int
+	isPaused        bool
+	menuSelection   int
 }
 
 func NewGame(start bool) *Game {
@@ -71,6 +73,33 @@ func NewGame(start bool) *Game {
 }
 
 func (g *Game) Update() error {
+	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) && g.started && !g.gameOver && !g.victory {
+		g.isPaused = !g.isPaused
+		g.menuSelection = 0
+	}
+
+	if g.isPaused {
+		if inpututil.IsKeyJustPressed(ebiten.KeyUp) || inpututil.IsKeyJustPressed(ebiten.KeyW) {
+			g.menuSelection--
+			if g.menuSelection < 0 { g.menuSelection = 2 }
+		}
+		if inpututil.IsKeyJustPressed(ebiten.KeyDown) || inpututil.IsKeyJustPressed(ebiten.KeyS) {
+			g.menuSelection++
+			if g.menuSelection > 2 { g.menuSelection = 0 }
+		}
+		if inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
+			switch g.menuSelection {
+			case 0: // Resume
+				g.isPaused = false
+			case 1: // Reset
+				g.isPaused = false
+				g.Reset()
+			case 2: // Quit
+				return ebiten.Termination
+			}
+		}
+		return nil
+	}
 	UpdateMusic(g.timer, g.started)
 	if g.shakeFrames > 0 {
 		g.shakeFrames--
@@ -429,6 +458,25 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		op.GeoM.Translate((rand.Float64()-0.5)*intensity, (rand.Float64()-0.5)*intensity)
 	}
 	screen.DrawImage(g.offscreen, op)
+
+	if g.isPaused {
+		overlay := ebiten.NewImage(screenWidth, screenHeight)
+		overlay.Fill(color.RGBA{0, 0, 0, 180})
+		screen.DrawImage(overlay, nil)
+
+		DrawNeonText(screen, "PAUSED", float64(screenWidth)/2, 300, 60, color.RGBA{0, 255, 255, 255})
+
+		options := []string{"RESUME", "RESTART", "QUIT"}
+		for i, opt := range options {
+			clr := color.RGBA{255, 255, 255, 150}
+			size := 30.0
+			if i == g.menuSelection {
+				clr = color.RGBA{255, 200, 0, 255}
+				size = 40.0
+			}
+			DrawNeonText(screen, opt, float64(screenWidth)/2, float64(500+i*100), size, clr)
+		}
+	}
 }
 
 func (g *Game) drawUI(screen *ebiten.Image) {
