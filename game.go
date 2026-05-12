@@ -107,6 +107,9 @@ func (g *Game) Update() error {
 	}
 
 	// Toggle Auto-aim
+	if inpututil.IsKeyJustPressed(ebiten.KeyF11) {
+		ebiten.SetFullscreen(!ebiten.IsFullscreen())
+	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyL) {
 		g.autoAim = !g.autoAim
 	}
@@ -117,7 +120,6 @@ func (g *Game) Update() error {
 		if inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
 			g.started = true
 		}
-		// Parallax Stars still move in background
 		for i := range g.stars {
 			g.stars[i].y += g.stars[i].speed
 			if g.stars[i].y > screenHeight {
@@ -152,7 +154,7 @@ func (g *Game) Update() error {
 	// Minute 11 Final Boss
 	if minutes == 11 && !g.isFinalBoss {
 		g.isFinalBoss = true
-		StopAlarm()
+		ResetMusic()
 		finalBoss := NewBoss(20)
 		finalBoss.hp = 1000
 		finalBoss.maxHP = 1000 // Ensure maxHP matches
@@ -355,7 +357,6 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		// Draw Splash Image with Alpha
 		if splashImage != nil {
 			slop := &ebiten.DrawImageOptions{}
-			// Center the splash image
 			sw, sh := splashImage.Bounds().Dx(), splashImage.Bounds().Dy()
 			scaleX := float64(screenWidth) / float64(sw)
 			scaleY := float64(screenHeight) / float64(sh)
@@ -365,24 +366,34 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			slop.GeoM.Translate(float64(screenWidth)/2-float64(sw)*scale/2, float64(screenHeight)/2-float64(sh)*scale/2)
 			slop.ColorScale.ScaleWithColor(color.RGBA{255, 255, 255, uint8(255 * alpha)})
 			screen.DrawImage(splashImage, slop)
-		} else {
-			// Fallback to title if image missing
-			logoImg := ebiten.NewImage(screenWidth, screenHeight)
-			DrawNeonTitle(logoImg, float64(screenWidth)/2, float64(screenHeight)/2-350)
-			lop := &ebiten.DrawImageOptions{}
-			lop.ColorScale.ScaleWithColor(color.RGBA{255, 255, 255, uint8(255 * alpha)})
-			screen.DrawImage(logoImg, lop)
 		}
 
-		// Draw Press Enter with Alpha
+		// Draw Dark Overlay for text contrast
+		if alpha > 0.5 {
+			textOverlay := ebiten.NewImage(screenWidth, screenHeight)
+			textOverlay.Fill(color.RGBA{0, 0, 0, uint8(120 * (alpha-0.5)*2)})
+			screen.DrawImage(textOverlay, nil)
+		}
+
+		// Draw Logo with Alpha - Positioned at top
+		logoImg := ebiten.NewImage(screenWidth, screenHeight)
+		DrawNeonTitle(logoImg, float64(screenWidth)/2, 100)
+		lop := &ebiten.DrawImageOptions{}
+		lop.ColorScale.ScaleWithColor(color.RGBA{255, 255, 255, uint8(255 * alpha)})
+		screen.DrawImage(logoImg, lop)
+
+		// Draw Press Enter with Alpha - Positioned at bottom with larger neon text
 		if g.splashTimer > 120 { // Start showing after 2s
 			enterAlpha := (float64(g.splashTimer) - 120.0) / 120.0
 			if enterAlpha > 1.0 { enterAlpha = 1.0 }
-			pulse := (math.Sin(float64(g.splashTimer)*0.03) + 1.0) / 2.0 // Slower pulse
+			pulse := (math.Sin(float64(g.splashTimer)*0.03) + 1.0) / 2.0
 			enterAlpha *= (0.4 + 0.6*pulse)
 			
-			msg := "PRESS ENTER TO PLAY"
-			ebitenutil.DebugPrintAt(screen, msg, screenWidth/2-60, screenHeight/2+300)
+			promptImg := ebiten.NewImage(screenWidth, screenHeight)
+			DrawNeonText(promptImg, "PRESS ENTER TO PLAY", float64(screenWidth)/2, 900, 30, color.RGBA{255, 255, 255, 255})
+			pop := &ebiten.DrawImageOptions{}
+			pop.ColorScale.ScaleWithColor(color.RGBA{255, 255, 255, uint8(255 * enterAlpha)})
+			screen.DrawImage(promptImg, pop)
 		}
 		return
 	}
@@ -511,7 +522,7 @@ func drawWithGlow(screen *ebiten.Image, drawFunc func(*ebiten.Image), intensity 
 }
 
 func (g *Game) Reset() {
-	StopAlarm()
+	ResetMusic()
 	newGame := NewGame(false)
 	// Preserve the scores manager so we don't reload from disk unnecessarily
 	// but the NewGame already reloads them, which is fine.
