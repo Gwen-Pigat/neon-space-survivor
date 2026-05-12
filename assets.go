@@ -150,28 +150,31 @@ func DrawNeonBullet(screen *ebiten.Image, x, y, size float64, clr color.RGBA) {
 
 func DrawNeonTitle(screen *ebiten.Image, x, y float64) {
 	xf, yf := float32(x), float32(y)
+	s := float32(80) // Larger letters
+	spacing := float32(100)
+
 	clr1 := color.RGBA{0, 255, 255, 255}
-	drawLetterN(screen, xf-120, yf, 40, clr1)
-	drawLetterE(screen, xf-70, yf, 40, clr1)
-	drawLetterO(screen, xf-20, yf, 40, clr1)
-	drawLetterN(screen, xf+30, yf, 40, clr1)
+	drawLetterN(screen, xf-1.5*spacing, yf, s, clr1)
+	drawLetterE(screen, xf-0.5*spacing, yf, s, clr1)
+	drawLetterO(screen, xf+0.5*spacing, yf, s, clr1)
+	drawLetterN(screen, xf+1.5*spacing, yf, s, clr1)
 	
 	clr2 := color.RGBA{255, 200, 0, 255}
-	drawLetterS(screen, xf-150, yf+60, 40, clr2)
-	drawLetterP(screen, xf-100, yf+60, 40, clr2)
-	drawLetterA(screen, xf-50, yf+60, 40, clr2)
-	drawLetterC(screen, xf, yf+60, 40, clr2)
-	drawLetterE(screen, xf+50, yf+60, 40, clr2)
+	drawLetterS(screen, xf-2*spacing, yf+s*1.2, s, clr2)
+	drawLetterP(screen, xf-spacing, yf+s*1.2, s, clr2)
+	drawLetterA(screen, xf, yf+s*1.2, s, clr2)
+	drawLetterC(screen, xf+spacing, yf+s*1.2, s, clr2)
+	drawLetterE(screen, xf+2*spacing, yf+s*1.2, s, clr2)
 	
 	clr3 := color.RGBA{255, 0, 255, 255}
-	drawLetterS(screen, xf-200, yf+120, 40, clr3)
-	drawLetterU(screen, xf-150, yf+120, 40, clr3)
-	drawLetterR(screen, xf-100, yf+120, 40, clr3)
-	drawLetterV(screen, xf-50, yf+120, 40, clr3)
-	drawLetterI(screen, xf, yf+120, 40, clr3)
-	drawLetterV(screen, xf+30, yf+120, 40, clr3)
-	drawLetterO(screen, xf+80, yf+120, 40, clr3)
-	drawLetterR(screen, xf+130, yf+120, 40, clr3)
+	drawLetterS(screen, xf-3.5*spacing, yf+s*2.4, s, clr3)
+	drawLetterU(screen, xf-2.5*spacing, yf+s*2.4, s, clr3)
+	drawLetterR(screen, xf-1.5*spacing, yf+s*2.4, s, clr3)
+	drawLetterV(screen, xf-0.5*spacing, yf+s*2.4, s, clr3)
+	drawLetterI(screen, xf+0.2*spacing, yf+s*2.4, s, clr3)
+	drawLetterV(screen, xf+0.8*spacing, yf+s*2.4, s, clr3)
+	drawLetterO(screen, xf+1.8*spacing, yf+s*2.4, s, clr3)
+	drawLetterR(screen, xf+2.8*spacing, yf+s*2.4, s, clr3)
 }
 
 func drawLetterN(s *ebiten.Image, x, y, size float32, clr color.RGBA) {
@@ -243,3 +246,45 @@ func drawLetterV(s *ebiten.Image, x, y, size float32, clr color.RGBA) {
 func drawLetterI(s *ebiten.Image, x, y, size float32, clr color.RGBA) {
 	vector.StrokeLine(s, x, y, x, y+size, 4, clr, true)
 }
+func drawLetterT(s *ebiten.Image, x, y, size float32, clr color.RGBA) {
+	vector.StrokeLine(s, x, y, x+size/2, y, 4, clr, true)
+	vector.StrokeLine(s, x+size/4, y, x+size/4, y+size, 4, clr, true)
+}
+
+func drawLetterL(s *ebiten.Image, x, y, size float32, clr color.RGBA) {
+	vector.StrokeLine(s, x, y, x, y+size, 4, clr, true)
+	vector.StrokeLine(s, x, y+size, x+size/2, y+size, 4, clr, true)
+}
+
+func drawLetterY(s *ebiten.Image, x, y, size float32, clr color.RGBA) {
+	vector.StrokeLine(s, x, y, x+size/4, y+size/2, 4, clr, true)
+	vector.StrokeLine(s, x+size/2, y, x+size/4, y+size/2, 4, clr, true)
+	vector.StrokeLine(s, x+size/4, y+size/2, x+size/4, y+size, 4, clr, true)
+}
+
+func DrawNeonText(screen *ebiten.Image, text string, x, y float64, size float64, clr color.RGBA) {
+	xf, yf := float32(x), float32(y)
+	s := float32(size)
+	spacing := s * 0.8
+	offset := -float32(len(text)-1) * spacing / 2
+	for i, char := range text {
+		cx := xf + offset + float32(i)*spacing
+		switch char {
+		case 'N': drawLetterN(screen, cx, yf, s, clr)
+		case 'E': drawLetterE(screen, cx, yf, s, clr)
+		case 'O': drawLetterO(screen, cx, yf, s, clr)
+		case 'S': drawLetterS(screen, cx, yf, s, clr)
+		case 'P': drawLetterP(screen, cx, yf, s, clr)
+		case 'A': drawLetterA(screen, cx, yf, s, clr)
+		case 'C': drawLetterC(screen, cx, yf, s, clr)
+		case 'U': drawLetterU(screen, cx, yf, s, clr)
+		case 'R': drawLetterR(screen, cx, yf, s, clr)
+		case 'V': drawLetterV(screen, cx, yf, s, clr)
+		case 'I': drawLetterI(screen, cx, yf, s, clr)
+		case 'T': drawLetterT(screen, cx, yf, s, clr)
+		case 'L': drawLetterL(screen, cx, yf, s, clr)
+		case 'Y': drawLetterY(screen, cx, yf, s, clr)
+		}
+	}
+}
+
