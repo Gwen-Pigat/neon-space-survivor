@@ -46,9 +46,22 @@ func InitAudio() {
 	hitBuf = generateHit()
 	transitionBuf = generateTransition()
 
+	ResetMusic()
+}
+
+func ResetMusic() {
+	if audioContext == nil {
+		return
+	}
+	StopAlarm()
+	if currentMusicPlayer != nil { currentMusicPlayer.Close() }
+	if nextMusicPlayer != nil { nextMusicPlayer.Close() }
+	
 	musicState = 0
 	currentTrack = rand.Intn(2) + 1
 	loadTrack(musicState, currentTrack, true)
+	isCrossfading = false
+	fadeAlpha = 0
 }
 
 func loadTrack(state int, track int, isCurrent bool) {
