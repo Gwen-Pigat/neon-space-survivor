@@ -471,9 +471,8 @@ func (g *Game) HandleCollisionsAndEnnemies(minutes int) error {
 						g.shakeFrames = 100
 						g.shakeIntensity = 20.0
 						PlayOverdrive()
-					} else {
-						g.shakeFrames = int(10 * explSize)
 					}
+					g.shakeFrames = int(10 * explSize)
 					i--
 				}
 				// Deactivate bullet (swap-and-pop handled here)
