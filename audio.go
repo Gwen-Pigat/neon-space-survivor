@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"fmt"
 	"math"
 	"math/rand"
 	"os"
@@ -14,23 +16,23 @@ const (
 )
 
 var (
-	audioContext *audio.Context
-	laserBuf     []byte
-	explosionBuf []byte
-	hitBuf       []byte
-	transitionBuf []byte
-
+	audioContext    *audio.Context
+	laserBuf        []byte
+	explosionBuf    []byte
+	hitBuf          []byte
+	transitionBuf   []byte
+	bossAppearsBuf  []byte
+	lostSoundBuf    []byte
+	successSoundBuf []byte
 	// Music Management
 	currentMusicPlayer *audio.Player
 	nextMusicPlayer    *audio.Player
 	currentStream      *mp3.Stream
 	nextStream         *mp3.Stream
-
-	musicState     int
-	currentTrack   int
-	isCrossfading  bool
-	fadeAlpha      float64
-
+	musicState         int
+	currentTrack       int
+	isCrossfading      bool
+	fadeAlpha          float64
 	// Special Effects
 	alarmPlayer *audio.Player
 )
@@ -40,41 +42,50 @@ func InitAudio() {
 		return
 	}
 	audioContext = audio.NewContext(sampleRate)
-
 	laserBuf = generateLaser()
 	explosionBuf = generateExplosion()
 	hitBuf = generateHit()
 	transitionBuf = generateTransition()
-
+	bossAppearsBuf = loadSoundFile("static/audio/enemies/boss/pop.mp3")
+	lostSoundBuf = loadSoundFile("static/audio/global/losses/sound.mp3")
+	successSoundBuf = loadSoundFile("static/audio/global/success/sound.mp3")
 	ResetMusic()
 }
-
+func loadSoundFile(path string) []byte {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	return data
+}
 func ResetMusic() {
 	if audioContext == nil {
 		return
 	}
 	StopAlarm()
-	if currentMusicPlayer != nil { currentMusicPlayer.Close() }
-	if nextMusicPlayer != nil { nextMusicPlayer.Close() }
-	
+	if currentMusicPlayer != nil {
+		currentMusicPlayer.Close()
+	}
+	if nextMusicPlayer != nil {
+		nextMusicPlayer.Close()
+	}
+
 	musicState = 0
 	currentTrack = rand.Intn(2) + 1
 	loadTrack(musicState, currentTrack, true)
 	isCrossfading = false
 	fadeAlpha = 0
 }
-
 func loadTrack(state int, track int, isCurrent bool) {
 	path := ""
 	switch state {
 	case 0:
-		path = "static/audio/main_theme_" + string(rune('0'+track)) + ".mp3"
+		path = fmt.Sprintf("static/audio/global/theme/theme_%d.mp3", track)
 	case 1:
-		path = "static/audio/Start_" + string(rune('0'+track)) + ".mp3"
+		path = fmt.Sprintf("static/audio/global/home/home_%d.mp3", track)
 	case 2:
-		path = "static/audio/End_" + string(rune('0'+track)) + ".mp3"
+		path = fmt.Sprintf("static/audio/global/segment_last/segment_last_%d.mp3", track)
 	}
-
 	f, err := os.Open(path)
 	if err != nil {
 		return
@@ -87,7 +98,6 @@ func loadTrack(state int, track int, isCurrent bool) {
 	if err != nil {
 		return
 	}
-
 	if isCurrent {
 		if currentMusicPlayer != nil {
 			currentMusicPlayer.Close()
@@ -105,13 +115,11 @@ func loadTrack(state int, track int, isCurrent bool) {
 		nextMusicPlayer.SetVolume(0)
 	}
 }
-
 func UpdateMusic(timer int, started bool) {
 	// Don't update normal music during Game Over or Victory states (States 3 and 4)
 	if musicState >= 3 {
 		return
 	}
-
 	minutes := timer / 3600
 	newState := 0
 	if started {
@@ -121,7 +129,6 @@ func UpdateMusic(timer int, started bool) {
 			newState = 1
 		}
 	}
-
 	if newState != musicState {
 		if newState == 2 {
 			PlayTransition()
@@ -133,15 +140,12 @@ func UpdateMusic(timer int, started bool) {
 		fadeAlpha = 0
 		return
 	}
-
 	if currentMusicPlayer == nil {
 		return
 	}
-
 	pos := currentMusicPlayer.Current().Seconds()
 	length := float64(currentStream.Length()) / 4 / sampleRate
 	fadeStart := length - 8.0
-
 	if !isCrossfading && pos > fadeStart {
 		isCrossfading = true
 		fadeAlpha = 0
@@ -154,7 +158,6 @@ func UpdateMusic(timer int, started bool) {
 		loadTrack(musicState, nextTrack, false)
 		currentTrack = nextTrack
 	}
-
 	if isCrossfading {
 		fadeAlpha += 1.0 / (60.0 * 5.0)
 		if fadeAlpha >= 1.0 {
@@ -178,22 +181,25 @@ func UpdateMusic(timer int, started bool) {
 		currentMusicPlayer.SetVolume(1.0)
 	}
 }
-
 func PlayBossAppears() {
-	if audioContext == nil {
+	if audioContext == nil || bossAppearsBuf == nil {
 		return
 	}
-	f, _ := os.Open("static/audio/boss_appears.mp3")
-	s, _ := mp3.DecodeWithSampleRate(sampleRate, f)
-	p, _ := audioContext.NewPlayer(s)
+	s, err := mp3.DecodeWithSampleRate(sampleRate, bytes.NewReader(bossAppearsBuf))
+	if err != nil {
+		return
+	}
+	p, err := audioContext.NewPlayer(s)
+	if err != nil {
+		return
+	}
 	p.Play()
 }
-
 func StartAlarm() {
 	if audioContext == nil || alarmPlayer != nil {
 		return
 	}
-	f, err := os.Open("static/audio/Alarm, Boss Appears.mp3")
+	f, err := os.Open("static/audio/global/alarms/alarm_1.mp3")
 	if err != nil {
 		return
 	}
@@ -202,14 +208,12 @@ func StartAlarm() {
 	alarmPlayer, _ = audioContext.NewPlayer(l)
 	alarmPlayer.Play()
 }
-
 func StopAlarm() {
 	if alarmPlayer != nil {
 		alarmPlayer.Close()
 		alarmPlayer = nil
 	}
 }
-
 func PlayTransition() {
 	if audioContext == nil {
 		return
@@ -217,53 +221,60 @@ func PlayTransition() {
 	p := audioContext.NewPlayerFromBytes(transitionBuf)
 	p.Play()
 }
-
 func PlayDefeat() {
 	if audioContext == nil || musicState == 3 {
 		return
 	}
 	StopAlarm()
-	if currentMusicPlayer != nil { currentMusicPlayer.Close() }
-	if nextMusicPlayer != nil { nextMusicPlayer.Close() }
+	if currentMusicPlayer != nil {
+		currentMusicPlayer.Close()
+	}
+	if nextMusicPlayer != nil {
+		nextMusicPlayer.Close()
+	}
 	musicState = 3
-
 	// Sound
-	f1, _ := os.Open("static/audio/lost_sound.mp3")
-	s1, _ := mp3.DecodeWithSampleRate(sampleRate, f1)
-	p1, _ := audioContext.NewPlayer(s1)
-	p1.Play()
-
+	if lostSoundBuf != nil {
+		s1, _ := mp3.DecodeWithSampleRate(sampleRate, bytes.NewReader(lostSoundBuf))
+		p1, _ := audioContext.NewPlayer(s1)
+		p1.Play()
+	}
 	// Song
-	f2, _ := os.Open("static/audio/lost_song.mp3")
-	s2, _ := mp3.DecodeWithSampleRate(sampleRate, f2)
-	l2 := audio.NewInfiniteLoop(s2, s2.Length())
-	currentMusicPlayer, _ = audioContext.NewPlayer(l2)
-	currentMusicPlayer.Play()
+	f2, err := os.Open("static/audio/global/losses/song.mp3")
+	if err == nil {
+		s2, _ := mp3.DecodeWithSampleRate(sampleRate, f2)
+		l2 := audio.NewInfiniteLoop(s2, s2.Length())
+		currentMusicPlayer, _ = audioContext.NewPlayer(l2)
+		currentMusicPlayer.Play()
+	}
 }
-
 func PlayVictory() {
 	if audioContext == nil || musicState == 4 {
 		return
 	}
 	StopAlarm()
-	if currentMusicPlayer != nil { currentMusicPlayer.Close() }
-	if nextMusicPlayer != nil { nextMusicPlayer.Close() }
+	if currentMusicPlayer != nil {
+		currentMusicPlayer.Close()
+	}
+	if nextMusicPlayer != nil {
+		nextMusicPlayer.Close()
+	}
 	musicState = 4
-
 	// Sound
-	f1, _ := os.Open("static/audio/success_sound.mp3")
-	s1, _ := mp3.DecodeWithSampleRate(sampleRate, f1)
-	p1, _ := audioContext.NewPlayer(s1)
-	p1.Play()
-
+	if successSoundBuf != nil {
+		s1, _ := mp3.DecodeWithSampleRate(sampleRate, bytes.NewReader(successSoundBuf))
+		p1, _ := audioContext.NewPlayer(s1)
+		p1.Play()
+	}
 	// Song
-	f2, _ := os.Open("static/audio/success_song.mp3")
-	s2, _ := mp3.DecodeWithSampleRate(sampleRate, f2)
-	l2 := audio.NewInfiniteLoop(s2, s2.Length())
-	currentMusicPlayer, _ = audioContext.NewPlayer(l2)
-	currentMusicPlayer.Play()
+	f2, err := os.Open("static/audio/global/success/song.mp3")
+	if err == nil {
+		s2, _ := mp3.DecodeWithSampleRate(sampleRate, f2)
+		l2 := audio.NewInfiniteLoop(s2, s2.Length())
+		currentMusicPlayer, _ = audioContext.NewPlayer(l2)
+		currentMusicPlayer.Play()
+	}
 }
-
 func generateTransition() []byte {
 	duration := 2.0
 	numSamples := int(sampleRate * duration)
@@ -271,7 +282,7 @@ func generateTransition() []byte {
 	for i := 0; i < numSamples; i++ {
 		t := float64(i) / sampleRate
 		freq := 200.0 + (t/duration)*800.0
-		v := math.Sin(2.0 * math.Pi * freq * t) * math.Sin(math.Pi * t / duration) * 0.4
+		v := math.Sin(2.0*math.Pi*freq*t) * math.Sin(math.Pi*t/duration) * 0.4
 		s := int16(v * 32767)
 		buf[4*i] = byte(s)
 		buf[4*i+1] = byte(s >> 8)
@@ -280,7 +291,6 @@ func generateTransition() []byte {
 	}
 	return buf
 }
-
 func generateLaser() []byte {
 	duration := 0.15
 	numSamples := int(sampleRate * duration)
@@ -288,7 +298,7 @@ func generateLaser() []byte {
 	for i := 0; i < numSamples; i++ {
 		t := float64(i) / sampleRate
 		freq := 1200.0 * math.Exp(-t*15.0)
-		v := math.Sin(2.0 * math.Pi * freq * t) * (1.0 - t/duration) * 0.3
+		v := math.Sin(2.0*math.Pi*freq*t) * (1.0 - t/duration) * 0.3
 		s := int16(v * 32767)
 		buf[4*i] = byte(s)
 		buf[4*i+1] = byte(s >> 8)
@@ -297,7 +307,6 @@ func generateLaser() []byte {
 	}
 	return buf
 }
-
 func generateExplosion() []byte {
 	duration := 0.5
 	numSamples := int(sampleRate * duration)
@@ -313,7 +322,6 @@ func generateExplosion() []byte {
 	}
 	return buf
 }
-
 func generateHit() []byte {
 	duration := 0.2
 	numSamples := int(sampleRate * duration)
@@ -322,8 +330,12 @@ func generateHit() []byte {
 		t := float64(i) / sampleRate
 		freq := 150.0
 		v := math.Sin(2.0 * math.Pi * freq * t)
-		if v > 0 { v = 0.5 } else { v = -0.5 }
-		v *= math.Exp(-t * 10.0) * 0.5
+		if v > 0 {
+			v = 0.5
+		} else {
+			v = -0.5
+		}
+		v *= math.Exp(-t*10.0) * 0.5
 		s := int16(v * 32767)
 		buf[4*i] = byte(s)
 		buf[4*i+1] = byte(s >> 8)
@@ -332,7 +344,14 @@ func generateHit() []byte {
 	}
 	return buf
 }
-
-func PlayLaser()     {}
-func PlayExplosion() { if audioContext != nil { audioContext.NewPlayerFromBytes(explosionBuf).Play() } }
-func PlayHit()       { if audioContext != nil { audioContext.NewPlayerFromBytes(hitBuf).Play() } }
+func PlayLaser() {}
+func PlayExplosion() {
+	if audioContext != nil {
+		audioContext.NewPlayerFromBytes(explosionBuf).Play()
+	}
+}
+func PlayHit() {
+	if audioContext != nil {
+		audioContext.NewPlayerFromBytes(hitBuf).Play()
+	}
+}

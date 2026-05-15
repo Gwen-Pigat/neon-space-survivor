@@ -9,70 +9,88 @@ import (
 )
 
 type Particle struct {
-	x, y          float64
-	vx, vy        float64
-	life          float64 // 0 to 1
-	decay         float64
-	color         color.RGBA
-	size          float64
+	x, y   float64
+	vx, vy float64
+	life   float64 // 0 to 1
+	decay  float64
+	color  color.RGBA
+	size   float64
+	active bool
 }
-
 type ParticleSystem struct {
 	particles []*Particle
+	pool      []*Particle
 }
 
 func NewParticleSystem() *ParticleSystem {
-	return &ParticleSystem{
-		particles: make([]*Particle, 0, 1000),
+	ps := &ParticleSystem{
+		particles: make([]*Particle, 0, 2000),
+		pool:      make([]*Particle, 0, 2000),
 	}
+	// Pre-fill pool
+	for i := 0; i < 2000; i++ {
+		ps.pool = append(ps.pool, &Particle{})
+	}
+	return ps
 }
-
 func (ps *ParticleSystem) Add(x, y, vx, vy float64, clr color.RGBA, decay float64) {
-	ps.particles = append(ps.particles, &Particle{
-		x:     x,
-		y:     y,
-		vx:    vx,
-		vy:    vy,
-		life:  1.0,
-		decay: decay,
-		color: clr,
-		size:  rand.Float64()*2 + 1,
-	})
+	var p *Particle
+	if len(ps.pool) > 0 {
+		p = ps.pool[len(ps.pool)-1]
+		ps.pool = ps.pool[:len(ps.pool)-1]
+	} else {
+		p = &Particle{}
+	}
+	p.x = x
+	p.y = y
+	p.vx = vx
+	p.vy = vy
+	p.life = 1.0
+	p.decay = decay
+	p.color = clr
+	p.size = rand.Float64()*2 + 1
+	p.active = true
+	ps.particles = append(ps.particles, p)
 }
-
 func (ps *ParticleSystem) Update() {
 	for i := 0; i < len(ps.particles); i++ {
 		p := ps.particles[i]
 		p.x += p.vx
 		p.y += p.vy
 		p.life -= p.decay
-
 		if p.life <= 0 {
-			ps.particles = append(ps.particles[:i], ps.particles[i+1:]...)
+			p.active = false
+			ps.pool = append(ps.pool, p)
+			// Swap-and-pop
+			ps.particles[i] = ps.particles[len(ps.particles)-1]
+			ps.particles = ps.particles[:len(ps.particles)-1]
 			i--
 		}
 	}
 }
-
 func (ps *ParticleSystem) Draw(screen *ebiten.Image) {
+	if len(ps.particles) == 0 {
+		return
+	}
+
 	for _, p := range ps.particles {
 		op := &ebiten.DrawImageOptions{}
-		op.GeoM.Scale(p.size*p.life, p.size*p.life)
+		s := p.size * p.life
+		op.GeoM.Scale(s, s)
 		op.GeoM.Translate(p.x, p.y)
-		
+
 		// Apply life to alpha
-		alpha := float64(p.color.A) * p.life
+		alpha := float32(p.color.A) * float32(p.life) / 255.0
 		op.ColorScale.Scale(
 			float32(p.color.R)/255,
 			float32(p.color.G)/255,
 			float32(p.color.B)/255,
-			float32(alpha)/255,
+			alpha,
 		)
-		
+
 		screen.DrawImage(particleImg, op)
 	}
 }
-
 func (ps *ParticleSystem) Explosion(x, y float64, clr color.RGBA, count int, sizeMultiplier float64) {
 	for i := 0; i < count; i++ {
 		angle := rand.Float64() * 2 * math.Pi

@@ -7,7 +7,6 @@ import (
 	"math/rand"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 )
 
 type EnemyType int
@@ -30,8 +29,34 @@ type Enemy struct {
 	state    int // 0: idle/move, 1: charging
 	timer    int
 	rotation float64
+	active   bool
 }
 
+var enemyPool []*Enemy
+
+func init() {
+	enemyPool = make([]*Enemy, 0, 200)
+	for i := 0; i < 200; i++ {
+		enemyPool = append(enemyPool, &Enemy{})
+	}
+}
+func getEnemyFromPool() *Enemy {
+	if len(enemyPool) > 0 {
+		e := enemyPool[len(enemyPool)-1]
+		enemyPool = enemyPool[:len(enemyPool)-1]
+		// Reset state
+		e.state = 0
+		e.timer = 0
+		e.vx = 0
+		e.vy = 0
+		e.active = true
+		return e
+	}
+	return &Enemy{active: true}
+}
+func (e *Enemy) Deactivate() {
+	enemyPool = append(enemyPool, e)
+}
 func NewEnemy(minutes int) *Enemy {
 	side := rand.Intn(4)
 	var x, y float64
@@ -45,7 +70,6 @@ func NewEnemy(minutes int) *Enemy {
 	case 3:
 		x, y = screenWidth+30, rand.Float64()*screenHeight
 	}
-
 	etype := TypeChaser
 	if rand.Float64() > 0.7 {
 		etype = TypeCharger
@@ -53,12 +77,10 @@ func NewEnemy(minutes int) *Enemy {
 	if minutes > 0 && rand.Float64() > 0.8 {
 		etype = TypeElite
 	}
-
 	// Stats scaling
 	baseSpeed := 2.5
 	hp := 1
 	size := 30.0
-
 	if etype == TypeCharger {
 		baseSpeed = 1.5
 	}
@@ -67,19 +89,17 @@ func NewEnemy(minutes int) *Enemy {
 		hp = rand.Intn(3) + 3
 		size = 60 + rand.Float64()*30
 	}
-
-	return &Enemy{
-		x:        x,
-		y:        y,
-		hp:       hp,
-		maxHP:    hp,
-		size:     size,
-		speed:    baseSpeed,
-		etype:    etype,
-		rotation: math.Atan2(screenHeight/2-y, screenWidth/2-x), // Face center initially
-	}
+	e := getEnemyFromPool()
+	e.x = x
+	e.y = y
+	e.hp = hp
+	e.maxHP = hp
+	e.size = size
+	e.speed = baseSpeed
+	e.etype = etype
+	e.rotation = math.Atan2(screenHeight/2-y, screenWidth/2-x)
+	return e
 }
-
 func NewBoss(minutes int) *Enemy {
 	side := rand.Intn(4)
 	var x, y float64
@@ -93,24 +113,20 @@ func NewBoss(minutes int) *Enemy {
 	case 3:
 		x, y = screenWidth+50, rand.Float64()*screenHeight
 	}
-
 	// Health: (Random + high default) * minutes passed
 	health := (rand.Intn(10) + 20) * (minutes + 1)
-
 	speed := 1.5
-
-	return &Enemy{
-		x:        x,
-		y:        y,
-		hp:       health,
-		maxHP:    health,
-		size:     100 + (float64(minutes) * 10),
-		speed:    speed,
-		etype:    TypeBoss,
-		rotation: math.Atan2(screenHeight/2-y, screenWidth/2-x), // Face center initially
-	}
+	e := getEnemyFromPool()
+	e.x = x
+	e.y = y
+	e.hp = health
+	e.maxHP = health
+	e.size = 100 + (float64(minutes) * 10)
+	e.speed = speed
+	e.etype = TypeBoss
+	e.rotation = math.Atan2(screenHeight/2-y, screenWidth/2-x)
+	return e
 }
-
 func (e *Enemy) Update(px, py float64) {
 	switch e.etype {
 	case TypeChaser:
@@ -145,16 +161,13 @@ func (e *Enemy) Update(px, py float64) {
 	}
 	e.x += e.vx
 	e.y += e.vy
-
 	// Update rotation based on movement direction
 	if e.vx != 0 || e.vy != 0 {
 		e.rotation = math.Atan2(e.vy, e.vx)
 	}
 }
-
 func (e *Enemy) Draw(screen *ebiten.Image, showUI bool) {
 	clr := color.RGBA{255, 50, 50, 255} // Default Red
-
 	switch e.etype {
 	case TypeCharger:
 		if e.state == 1 {
@@ -171,27 +184,31 @@ func (e *Enemy) Draw(screen *ebiten.Image, showUI bool) {
 			clr = color.RGBA{50, 255, 100, 255} // Green
 		}
 	}
-
 	if e.etype == TypeBoss {
 		DrawNeonBoss(screen, e.x, e.y, e.size, clr, e.rotation+math.Pi/2)
 	} else {
 		DrawNeonAlien(screen, e.x, e.y, e.size, clr)
 	}
-
 	if showUI {
 		// Draw health bar
 		barW := e.size * 1.2
 		barH := 4.0
 		bx := e.x - barW/2
 		by := e.y - e.size/2 - 10
-
 		// Background
-		ebitenutil.DrawRect(screen, bx, by, barW, barH, color.RGBA{50, 50, 50, 200})
+		bgOp := &ebiten.DrawImageOptions{}
+		bgOp.GeoM.Scale(barW, barH)
+		bgOp.GeoM.Translate(bx, by)
+		bgOp.ColorScale.ScaleWithColor(color.RGBA{50, 50, 50, 200})
+		screen.DrawImage(whitePixel, bgOp)
 		// Health
-		healthW := barW * (float64(e.hp) / float64(e.maxHP))
-		ebitenutil.DrawRect(screen, bx, by, healthW, barH, color.RGBA{255, 50, 50, 255})
-
+		healthRatio := float64(e.hp) / float64(e.maxHP)
+		healthOp := &ebiten.DrawImageOptions{}
+		healthOp.GeoM.Scale(barW*healthRatio, barH)
+		healthOp.GeoM.Translate(bx, by)
+		healthOp.ColorScale.ScaleWithColor(color.RGBA{255, 50, 50, 255})
+		screen.DrawImage(whitePixel, healthOp)
 		// Numbers
-		ebitenutil.DebugPrintAt(screen, fmt.Sprintf("%d/%d", e.hp, e.maxHP), int(bx), int(by-15))
+		DrawNeonText(screen, fmt.Sprintf("%d/%d", e.hp, e.maxHP), bx+barW/2, by-10, 12, color.RGBA{255, 255, 255, 200})
 	}
 }
