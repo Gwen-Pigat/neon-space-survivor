@@ -221,6 +221,14 @@ func PlayTransition() {
 	p := audioContext.NewPlayerFromBytes(transitionBuf)
 	p.Play()
 }
+func PlayOverdrive() {
+	if audioContext == nil {
+		return
+	}
+	p := audioContext.NewPlayerFromBytes(transitionBuf)
+	p.SetVolume(0.8)
+	p.Play()
+}
 func PlayDefeat() {
 	if audioContext == nil || musicState == 3 {
 		return
@@ -308,12 +316,13 @@ func generateLaser() []byte {
 	return buf
 }
 func generateExplosion() []byte {
-	duration := 0.5
+	duration := 0.3
 	numSamples := int(sampleRate * duration)
 	buf := make([]byte, numSamples*4)
 	for i := 0; i < numSamples; i++ {
 		t := float64(i) / sampleRate
-		v := (rand.Float64()*2.0 - 1.0) * math.Exp(-t*5.0) * 0.4
+		// Reduced volume and faster decay for a softer "pop" sound
+		v := (rand.Float64()*2.0 - 1.0) * math.Exp(-t*10.0) * 0.15
 		s := int16(v * 32767)
 		buf[4*i] = byte(s)
 		buf[4*i+1] = byte(s >> 8)

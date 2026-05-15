@@ -170,9 +170,18 @@ func LoadSplash() {
 		fmt.Printf("Failed to load splash image: %v\n", err)
 		splashImage = ebiten.NewImage(screenWidth, screenHeight)
 		splashImage.Fill(color.RGBA{50, 50, 70, 255})
-	} else {
-		fmt.Println("Splash image loaded successfully")
 	}
+
+	// Load other assets
+	bulletImage, _, err = ebitenutil.NewImageFromFile("static/images/bullet.png")
+	if err != nil {
+		fmt.Printf("Failed to load bullet image: %v\n", err)
+		bulletImage = ebiten.NewImage(8, 8)
+		bulletImage.Fill(color.White)
+	}
+	shipImage, _, err = ebitenutil.NewImageFromFile("static/images/player_ship.png")
+	alienImage, _, err = ebitenutil.NewImageFromFile("static/images/alien_enemy.png")
+	bossImage, _, err = ebitenutil.NewImageFromFile("static/images/boss_ship.png")
 }
 func createGlowTexture(size int, clr color.RGBA) *ebiten.Image {
 	img := ebiten.NewImage(size, size)
@@ -197,6 +206,14 @@ func DrawNeonAlien(screen *ebiten.Image, x, y, size float64, clr color.RGBA) {
 	op.GeoM.Translate(x-64*scale, y-64*scale)
 	op.ColorScale.ScaleWithColor(clr)
 	screen.DrawImage(alienTemplate, op)
+}
+func DrawNeonBullet(screen *ebiten.Image, x, y, size float64, clr color.RGBA) {
+	op := &ebiten.DrawImageOptions{}
+	scale := size / 8.0
+	op.GeoM.Scale(scale, scale)
+	op.GeoM.Translate(x-16*scale, y-16*scale)
+	op.ColorScale.ScaleWithColor(clr)
+	screen.DrawImage(bulletTemplate, op)
 }
 func drawNeonAlienRaw(screen *ebiten.Image, x, y, size float64, clr color.RGBA) {
 	s := float32(size)
@@ -283,19 +300,10 @@ func drawNeonShipRaw(screen *ebiten.Image, x, y, size float64, clr color.RGBA, r
 	drawVec(-s/6, s/3, s/6, s/3)
 	vector.DrawFilledRect(screen, xf-4, yf-float32(size)/6, 8, 8, color.White, true)
 }
-func DrawNeonBullet(screen *ebiten.Image, x, y, size float64, clr color.RGBA) {
-	op := &ebiten.DrawImageOptions{}
-	scale := size / 8.0
-	op.GeoM.Scale(scale, scale)
-	op.GeoM.Translate(x-16*scale, y-16*scale)
-	op.ColorScale.ScaleWithColor(clr)
-	screen.DrawImage(bulletTemplate, op)
-}
 func drawNeonBulletRaw(screen *ebiten.Image, x, y, size float64, clr color.RGBA) {
 	xf, yf := float32(x), float32(y)
 	s := float32(size)
 	vector.DrawFilledRect(screen, xf-s/2, yf-s/2, s, s, color.White, true)
-	vector.StrokeCircle(screen, xf, yf, s, 3, clr, true)
 }
 func DrawNeonTitle(screen *ebiten.Image, x, y float64) {
 	xf, yf := float32(x), float32(y)

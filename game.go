@@ -50,6 +50,8 @@ type Game struct {
 	victoryOverlay  *ebiten.Image
 	logoImg         *ebiten.Image
 	promptImg       *ebiten.Image
+	wipeTimer       int
+	overdriveTimer  int
 }
 
 func NewGame(start bool) *Game {
@@ -63,7 +65,7 @@ func NewGame(start bool) *Game {
 		offscreen:       ebiten.NewImage(screenWidth, screenHeight),
 		scores:          NewHighscoreManager(),
 		showUI:          true,
-		autoAim:         true,
+		autoAim:         false,
 		started:         !start, // If start is false (reset), then started is true
 		textOverlay:     ebiten.NewImage(screenWidth, screenHeight),
 		pauseOverlay:    ebiten.NewImage(screenWidth, screenHeight),
@@ -89,7 +91,8 @@ func NewGame(start bool) *Game {
 	}
 	return g
 }
-func (g *Game) Update() error {
+
+func (g *Game) HandleEscape() error {
 	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) && g.started && !g.gameOver && !g.victory {
 		g.isPaused = !g.isPaused
 		g.menuSelection = 0
@@ -120,11 +123,13 @@ func (g *Game) Update() error {
 		}
 		return nil
 	}
-	UpdateMusic(g.timer, g.started)
-	if g.shakeFrames > 0 {
-		g.shakeFrames--
-	}
+	return nil
+}
+
+func (g *Game) HandleEndGame() error {
 	if g.gameOver || g.victory {
+		g.shakeFrames = 0
+		g.overdriveTimer = 0
 		if !g.saved {
 			// Handle name input
 			g.playerName += string(ebiten.AppendInputChars(nil))
@@ -142,6 +147,24 @@ func (g *Game) Update() error {
 		}
 		return nil
 	}
+	return nil
+}
+
+func (g *Game) HandleSplashScreen() error {
+	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
+		g.started = true
+	}
+	for i := range g.stars {
+		g.stars[i].y += g.stars[i].speed
+		if g.stars[i].y > screenHeight {
+			g.stars[i].y = 0
+			g.stars[i].x = rand.Float64() * screenWidth
+		}
+	}
+	return nil
+}
+
+func (g *Game) HandleKeys() {
 	// Debug: Skip minute
 	if inpututil.IsKeyJustPressed(ebiten.KeyN) {
 		g.timer += 3600
@@ -157,6 +180,44 @@ func (g *Game) Update() error {
 	if inpututil.IsKeyJustPressed(ebiten.KeyL) {
 		g.autoAim = !g.autoAim
 	}
+}
+
+func (g *Game) WipeEnnemies() {
+	if len(g.enemies) > 0 {
+		PlayExplosion()
+	}
+	for _, e := range g.enemies {
+		g.particles.Explosion(e.x, e.y, color.RGBA{255, 100, 255, 255}, 15, 1.0)
+		if e.etype != TypeBoss {
+			e.Deactivate()
+		}
+	}
+}
+
+func (g *Game) Update() error {
+	if err := g.HandleSplashScreen(); err != nil {
+		return err
+	}
+	if err := g.HandleEscape(); err != nil {
+		return err
+	}
+	if g.isPaused {
+		return nil
+	}
+
+	if err := g.HandleEndGame(); err != nil {
+		return err
+	}
+	if g.gameOver || g.victory {
+		return nil
+	}
+
+	UpdateMusic(g.timer, g.started)
+	if g.shakeFrames > 0 {
+		g.shakeFrames--
+	}
+	g.HandleKeys()
+
 	// Handle Splash Screen
 	if !g.started {
 		g.splashTimer++
@@ -173,8 +234,19 @@ func (g *Game) Update() error {
 		return nil
 	}
 	g.timer++
+	if g.wipeTimer > 0 {
+		g.wipeTimer--
+		g.WipeEnnemies()
+	}
+	useAutoAim := g.autoAim
+	if g.overdriveTimer > 0 {
+		g.overdriveTimer--
+		useAutoAim = true
+		g.shakeFrames = 2
+		g.shakeIntensity = 20.0 // Much more intense
+	}
 	minutes := g.timer / 3600
-	if minutes < 10 {
+	if minutes < 10 && g.overdriveTimer <= 0 {
 		g.shakeIntensity = 0
 	}
 	// Calculate fire rate based on minutes (starts at 12, decreases by 1 every minute, min 3)
@@ -184,7 +256,10 @@ func (g *Game) Update() error {
 	} else if fireRate < 3 {
 		fireRate = 3
 	}
-	g.player.Update(g.particles, &g.bullets, g.enemies, g.autoAim, fireRate)
+	if g.overdriveTimer > 0 {
+		fireRate = 1 // Off the roof
+	}
+	g.player.Update(g.particles, &g.bullets, g.enemies, useAutoAim, fireRate)
 	g.particles.Update()
 	// Spawn boss every minute
 	if g.timer > 0 && g.timer%3600 == 0 && minutes < 11 { // 60fps * 60s
@@ -230,11 +305,7 @@ func (g *Game) Update() error {
 
 			// Wipe existing enemies once at the start
 			if !g.event8 {
-				for _, e := range g.enemies {
-					g.particles.Explosion(e.x, e.y, color.RGBA{255, 100, 255, 255}, 15, 1.0)
-					PlayExplosion()
-				}
-				g.enemies = nil
+				g.WipeEnnemies()
 				g.event8 = true
 				ResetMusic()
 			}
@@ -252,44 +323,8 @@ func (g *Game) Update() error {
 	}
 	// Minute 10 Wipe and Void Wave
 	if minutes >= 10 {
-		var spawnTimer int
-		if minutes == 10 {
-			framesInMinute := g.timer % 3600
-			g.shakeIntensity = 1.0 + (float64(framesInMinute)/3600.0)*15.0
-			if g.shakeFrames < 2 {
-				g.shakeFrames = 2
-			}
-			spawnTimer = 20
-		} else {
-			spawnTimer = 40
-			g.shakeIntensity = 10.0
-		}
-		if !g.event10 {
-			for _, e := range g.enemies {
-				g.particles.Explosion(e.x, e.y, color.RGBA{255, 100, 255, 255}, 15, 1.0)
-				PlayExplosion()
-			}
-			g.enemies = nil
-			StartAlarm()
-			g.shakeFrames = 120 // Initial big blast shake
-			g.event10 = true
-		}
-		// Special spawn for minute 10: Purple Elites
-		if g.spawnTimer > spawnTimer {
-			health := 5 + rand.Intn(11)         // 5 to 15 HP
-			speed := 1.0 + rand.Float64()*3.5   // 2.0 to 4.5 Speed
-			size := 60.0 + rand.Float64()*100.0 // 60 to 100 Size
-			voidElite := NewEnemy(10)
-			voidElite.etype = TypeElite
-			voidElite.hp = health
-			voidElite.maxHP = health
-			voidElite.size = size
-			voidElite.speed = speed
-			g.enemies = append(g.enemies, voidElite)
-			g.spawnTimer = 0
-		}
-		// Skip normal spawning during minute 10 event
-	} else if minutes < 10 && g.spawnTimer > spawnThreshold {
+		g.HandleMinutesEndgame(minutes)
+	} else if minutes < 10 && g.spawnTimer > spawnThreshold && g.wipeTimer <= 0 {
 		// More conservative wave scaling
 		count := 1 + (minutes / 4)
 		if minutes > 2 && g.timer%180 == 0 { // Small chance for double wave after 2 mins
@@ -300,6 +335,46 @@ func (g *Game) Update() error {
 		}
 		g.spawnTimer = 0
 	}
+	g.HandleCollisionsAndEnnemies(minutes)
+	return nil
+}
+
+func (g *Game) HandleMinutesEndgame(minutes int) {
+	var spawnTimer int
+	if minutes == 10 {
+		framesInMinute := g.timer % 3600
+		g.shakeIntensity = 1.0 + (float64(framesInMinute)/3600.0)*15.0
+		if g.shakeFrames < 2 {
+			g.shakeFrames = 2
+		}
+		spawnTimer = 20
+	} else {
+		spawnTimer = 40
+		g.shakeIntensity = 10.0
+	}
+	if !g.event10 {
+		g.WipeEnnemies()
+		StartAlarm()
+		g.shakeFrames = 120 // Initial big blast shake
+		g.event10 = true
+	}
+	// Special spawn for minute 10: Purple Elites
+	if g.spawnTimer > spawnTimer {
+		health := 5 + rand.Intn(11)         // 5 to 15 HP
+		speed := 1.0 + rand.Float64()*3.5   // 2.0 to 4.5 Speed
+		size := 60.0 + rand.Float64()*100.0 // 60 to 100 Size
+		voidElite := NewEnemy(10)
+		voidElite.etype = TypeElite
+		voidElite.hp = health
+		voidElite.maxHP = health
+		voidElite.size = size
+		voidElite.speed = speed
+		g.enemies = append(g.enemies, voidElite)
+		g.spawnTimer = 0
+	}
+}
+
+func (g *Game) HandleCollisionsAndEnnemies(minutes int) error {
 	// Update enemies
 	for i := 0; i < len(g.enemies); i++ {
 		e := g.enemies[i]
@@ -344,12 +419,14 @@ func (g *Game) Update() error {
 					PlayDefeat()
 					g.particles.Explosion(g.player.x, g.player.y, color.RGBA{0, 255, 255, 255}, 50, 2.0)
 				}
-				// Deactivate and Swap-and-pop
-				e.Deactivate()
-				g.enemies[i] = g.enemies[len(g.enemies)-1]
-				g.enemies = g.enemies[:len(g.enemies)-1]
-				i--
-				continue
+				// Deactivate and Swap-and-pop (Bosses don't die on collision)
+				if e.etype != TypeBoss {
+					e.Deactivate()
+					g.enemies[i] = g.enemies[len(g.enemies)-1]
+					g.enemies = g.enemies[:len(g.enemies)-1]
+					i--
+					continue
+				}
 			}
 		}
 		// Collision with bullets
@@ -374,9 +451,12 @@ func (g *Game) Update() error {
 				}
 				e.hp--
 				if e.hp <= 0 {
-					if e.etype == TypeBoss && g.isFinalBoss {
-						g.victory = true
-						PlayVictory()
+					if e.etype == TypeBoss {
+						if g.isFinalBoss {
+							g.victory = true
+							PlayVictory()
+						}
+						g.wipeTimer = 120 // 2 second wipe
 					}
 					g.particles.Explosion(e.x, e.y, explClr, 20, explSize)
 					PlayExplosion()
@@ -386,7 +466,14 @@ func (g *Game) Update() error {
 					g.enemies = g.enemies[:len(g.enemies)-1]
 					g.score += scoreGain
 					g.kills++
-					g.shakeFrames = int(10 * explSize)
+					if g.kills > 0 && g.kills%150 == 0 {
+						g.overdriveTimer = 300 // 5 second overdrive
+						g.shakeFrames = 100
+						g.shakeIntensity = 20.0
+						PlayOverdrive()
+					} else {
+						g.shakeFrames = int(10 * explSize)
+					}
 					i--
 				}
 				// Deactivate bullet (swap-and-pop handled here)
@@ -408,6 +495,7 @@ func (g *Game) Update() error {
 	}
 	return nil
 }
+
 func (g *Game) Draw(screen *ebiten.Image) {
 	if !g.started {
 		// Pure black background for splash
@@ -516,16 +604,15 @@ func (g *Game) Draw(screen *ebiten.Image) {
 func (g *Game) drawUI(screen *ebiten.Image) {
 	s := fmt.Sprintf("SCORE: %06d | KILLS: %d | TIME: %02d:%02d", g.score, g.kills, (g.timer/60)/60, (g.timer/60)%60)
 	DrawNeonText(screen, s, 250, 20, 15, color.RGBA{255, 255, 255, 200})
-	aimStatus := "ON"
-	if !g.autoAim {
-		aimStatus = "OFF (Mouse)"
+	if g.overdriveTimer > 0 {
+		pulse := math.Sin(float64(g.timer)*0.2)*0.5 + 0.5
+		DrawNeonText(screen, "OVERDRIVE ACTIVE", float64(screenWidth)/2, 100, 30, color.RGBA{255, uint8(255 * pulse), 0, 255})
 	}
-	DrawNeonText(screen, "AUTO-AIM [L]: "+aimStatus, 150, 40, 12, color.RGBA{255, 255, 255, 150})
 	displayHealth := "ON"
 	if !g.showUI {
 		displayHealth = "OFF"
 	}
-	DrawNeonText(screen, "DISPLAY HEALTH [I]: "+displayHealth, 150, 60, 12, color.RGBA{255, 255, 255, 150})
+	DrawNeonText(screen, "DISPLAY HEALTH [I]: "+displayHealth, 130, 60, 12, color.RGBA{255, 255, 255, 150})
 	// Player HP Bar at top center
 	barW := 400.0
 	barH := 20.0

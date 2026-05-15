@@ -214,7 +214,7 @@ func (b *Bullet) Update() bool {
 	return true
 }
 func (b *Bullet) Draw(screen *ebiten.Image) {
-	DrawNeonBullet(screen, b.x, b.y, 4, color.RGBA{255, 255, 0, 255})
+	DrawNeonBullet(screen, b.x, b.y, 8, color.RGBA{0, 255, 255, 255})
 }
 func randFloat(min, max float64) float64 {
 	return min + rand.Float64()*(max-min)
