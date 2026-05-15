@@ -196,18 +196,20 @@ func (e *Enemy) Draw(screen *ebiten.Image, showUI bool) {
 		bx := e.x - barW/2
 		by := e.y - e.size/2 - 10
 		// Background
-		bgOp := &ebiten.DrawImageOptions{}
-		bgOp.GeoM.Scale(barW, barH)
-		bgOp.GeoM.Translate(bx, by)
-		bgOp.ColorScale.ScaleWithColor(color.RGBA{50, 50, 50, 200})
-		screen.DrawImage(whitePixel, bgOp)
+		sharedDrawOp.GeoM.Reset()
+		sharedDrawOp.ColorScale.Reset()
+		sharedDrawOp.GeoM.Scale(barW, barH)
+		sharedDrawOp.GeoM.Translate(bx, by)
+		sharedDrawOp.ColorScale.ScaleWithColor(color.RGBA{50, 50, 50, 200})
+		screen.DrawImage(whitePixel, &sharedDrawOp)
 		// Health
 		healthRatio := float64(e.hp) / float64(e.maxHP)
-		healthOp := &ebiten.DrawImageOptions{}
-		healthOp.GeoM.Scale(barW*healthRatio, barH)
-		healthOp.GeoM.Translate(bx, by)
-		healthOp.ColorScale.ScaleWithColor(color.RGBA{255, 50, 50, 255})
-		screen.DrawImage(whitePixel, healthOp)
+		sharedDrawOp.GeoM.Reset()
+		sharedDrawOp.ColorScale.Reset()
+		sharedDrawOp.GeoM.Scale(barW*healthRatio, barH)
+		sharedDrawOp.GeoM.Translate(bx, by)
+		sharedDrawOp.ColorScale.ScaleWithColor(color.RGBA{255, 50, 50, 255})
+		screen.DrawImage(whitePixel, &sharedDrawOp)
 		// Numbers
 		DrawNeonText(screen, fmt.Sprintf("%d/%d", e.hp, e.maxHP), bx+barW/2, by-10, 12, color.RGBA{255, 255, 255, 200})
 	}

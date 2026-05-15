@@ -199,21 +199,25 @@ func createGlowTexture(size int, clr color.RGBA) *ebiten.Image {
 	}
 	return img
 }
+var sharedDrawOp ebiten.DrawImageOptions
+
 func DrawNeonAlien(screen *ebiten.Image, x, y, size float64, clr color.RGBA) {
-	op := &ebiten.DrawImageOptions{}
+	sharedDrawOp.GeoM.Reset()
+	sharedDrawOp.ColorScale.Reset()
 	scale := size / 60.0
-	op.GeoM.Scale(scale, scale)
-	op.GeoM.Translate(x-64*scale, y-64*scale)
-	op.ColorScale.ScaleWithColor(clr)
-	screen.DrawImage(alienTemplate, op)
+	sharedDrawOp.GeoM.Scale(scale, scale)
+	sharedDrawOp.GeoM.Translate(x-64*scale, y-64*scale)
+	sharedDrawOp.ColorScale.ScaleWithColor(clr)
+	screen.DrawImage(alienTemplate, &sharedDrawOp)
 }
 func DrawNeonBullet(screen *ebiten.Image, x, y, size float64, clr color.RGBA) {
-	op := &ebiten.DrawImageOptions{}
+	sharedDrawOp.GeoM.Reset()
+	sharedDrawOp.ColorScale.Reset()
 	scale := size / 8.0
-	op.GeoM.Scale(scale, scale)
-	op.GeoM.Translate(x-16*scale, y-16*scale)
-	op.ColorScale.ScaleWithColor(clr)
-	screen.DrawImage(bulletTemplate, op)
+	sharedDrawOp.GeoM.Scale(scale, scale)
+	sharedDrawOp.GeoM.Translate(x-16*scale, y-16*scale)
+	sharedDrawOp.ColorScale.ScaleWithColor(clr)
+	screen.DrawImage(bulletTemplate, &sharedDrawOp)
 }
 func drawNeonAlienRaw(screen *ebiten.Image, x, y, size float64, clr color.RGBA) {
 	s := float32(size)
@@ -236,14 +240,15 @@ func drawNeonAlienRaw(screen *ebiten.Image, x, y, size float64, clr color.RGBA) 
 	vector.DrawFilledRect(screen, xf+2, yf-2, 2, 2, color.White, true)
 }
 func DrawNeonBoss(screen *ebiten.Image, x, y, size float64, clr color.RGBA, rotation float64) {
-	op := &ebiten.DrawImageOptions{}
+	sharedDrawOp.GeoM.Reset()
+	sharedDrawOp.ColorScale.Reset()
 	scale := size / 200.0
-	op.GeoM.Translate(-256, -256)
-	op.GeoM.Rotate(rotation)
-	op.GeoM.Scale(scale, scale)
-	op.GeoM.Translate(x, y)
-	op.ColorScale.ScaleWithColor(clr)
-	screen.DrawImage(bossTemplate, op)
+	sharedDrawOp.GeoM.Translate(-256, -256)
+	sharedDrawOp.GeoM.Rotate(rotation)
+	sharedDrawOp.GeoM.Scale(scale, scale)
+	sharedDrawOp.GeoM.Translate(x, y)
+	sharedDrawOp.ColorScale.ScaleWithColor(clr)
+	screen.DrawImage(bossTemplate, &sharedDrawOp)
 }
 func drawNeonBossRaw(screen *ebiten.Image, x, y, size float64, clr color.RGBA, rotation float64) {
 	s := float32(size)
@@ -272,14 +277,15 @@ func drawNeonBossRaw(screen *ebiten.Image, x, y, size float64, clr color.RGBA, r
 	vector.DrawFilledRect(screen, xf-5, yf-5, 10, 10, color.White, true)
 }
 func DrawNeonShip(screen *ebiten.Image, x, y, size float64, clr color.RGBA, rotation float64) {
-	op := &ebiten.DrawImageOptions{}
+	sharedDrawOp.GeoM.Reset()
+	sharedDrawOp.ColorScale.Reset()
 	scale := size / 64.0
-	op.GeoM.Translate(-64, -64)
-	op.GeoM.Rotate(rotation)
-	op.GeoM.Scale(scale, scale)
-	op.GeoM.Translate(x, y)
-	op.ColorScale.ScaleWithColor(clr)
-	screen.DrawImage(shipTemplate, op)
+	sharedDrawOp.GeoM.Translate(-64, -64)
+	sharedDrawOp.GeoM.Rotate(rotation)
+	sharedDrawOp.GeoM.Scale(scale, scale)
+	sharedDrawOp.GeoM.Translate(x, y)
+	sharedDrawOp.ColorScale.ScaleWithColor(clr)
+	screen.DrawImage(shipTemplate, &sharedDrawOp)
 }
 func drawNeonShipRaw(screen *ebiten.Image, x, y, size float64, clr color.RGBA, rotation float64) {
 	s := float32(size)

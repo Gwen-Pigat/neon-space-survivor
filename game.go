@@ -298,25 +298,28 @@ func (g *Game) Update() error {
 	// Minute 8 Event: Gradual Shake then Swarm
 	if minutes == 8 {
 		framesInMinute := g.timer % 3600
-		if framesInMinute < 300 { // 5 seconds of build-up
-			// Gradual shake increase
-			g.shakeFrames = 2
-			g.shakeIntensity = float64(framesInMinute) / 10.0 // Reaches 30
-
-			// Wipe existing enemies once at the start
+		if framesInMinute < 300 { // 5 seconds duration
 			if !g.event8 {
+				ResetMusic()
 				g.WipeEnnemies()
 				g.event8 = true
-				ResetMusic()
+				StartAlarm()
 			}
-			spawnThreshold = 999999 // Don't spawn yet
-		} else {
-			// After 5 seconds: Stop shake and start swarm
-			if g.shakeIntensity > 0 {
-				g.shakeFrames = 0
-				g.shakeIntensity = 0
+			g.shakeFrames = 2
+			g.shakeIntensity = 30.0 // Shaking a lot
+			spawnThreshold = 999999 // No spawn
+		} else if framesInMinute >= 300 && g.event8 {
+			// Transition at exactly 5 seconds (runs once)
+			StopAlarm()
+
+			for i := 0; i < 3; i++ {
+				g.enemies = append(g.enemies, NewBoss(minutes))
 			}
-			spawnThreshold = 15 // Swarm intensity
+			PlayBossAppears()
+			g.event8 = false // Reset so this only runs once
+		}
+		if framesInMinute >= 300 {
+			spawnThreshold = 15 // Swarm intensity resumes
 		}
 	} else if minutes > 8 {
 		spawnThreshold = 15
@@ -471,8 +474,12 @@ func (g *Game) HandleCollisionsAndEnnemies(minutes int) error {
 						g.shakeFrames = 100
 						g.shakeIntensity = 20.0
 						PlayOverdrive()
+					} else {
+						newShake := int(10 * explSize)
+						if newShake > g.shakeFrames {
+							g.shakeFrames = newShake
+						}
 					}
-					g.shakeFrames = int(10 * explSize)
 					i--
 				}
 				// Deactivate bullet (swap-and-pop handled here)
@@ -500,15 +507,18 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		// Pure black background for splash
 		g.offscreen.Fill(color.Black)
 		// Parallax Stars only
-		for _, s := range g.stars {
-			op := &ebiten.DrawImageOptions{}
-			op.GeoM.Scale(s.size, s.size)
-			op.GeoM.Translate(s.x, s.y)
-			op.ColorScale.ScaleWithColor(s.color)
-			g.offscreen.DrawImage(whitePixel, op)
+		for i := range g.stars {
+			s := &g.stars[i]
+			sharedDrawOp.GeoM.Reset()
+			sharedDrawOp.ColorScale.Reset()
+			sharedDrawOp.GeoM.Scale(s.size, s.size)
+			sharedDrawOp.GeoM.Translate(s.x, s.y)
+			sharedDrawOp.ColorScale.ScaleWithColor(s.color)
+			g.offscreen.DrawImage(whitePixel, &sharedDrawOp)
 		}
-		op := &ebiten.DrawImageOptions{}
-		screen.DrawImage(g.offscreen, op)
+		sharedDrawOp.GeoM.Reset()
+		sharedDrawOp.ColorScale.Reset()
+		screen.DrawImage(g.offscreen, &sharedDrawOp)
 		// Progressive Fade-in for Splash Image and UI
 		alpha := float64(g.splashTimer) / 240.0 // 4 second slow fade
 		if alpha > 1.0 {
@@ -516,7 +526,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		}
 		// Draw Splash Image with Alpha
 		if splashImage != nil {
-			slop := &ebiten.DrawImageOptions{}
+			sharedDrawOp.GeoM.Reset()
+			sharedDrawOp.ColorScale.Reset()
 			sw, sh := splashImage.Bounds().Dx(), splashImage.Bounds().Dy()
 			scaleX := float64(screenWidth) / float64(sw)
 			scaleY := float64(screenHeight) / float64(sh)
@@ -524,10 +535,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			if scaleY > scale {
 				scale = scaleY
 			}
-			slop.GeoM.Scale(scale, scale)
-			slop.GeoM.Translate(float64(screenWidth)/2-float64(sw)*scale/2, float64(screenHeight)/2-float64(sh)*scale/2)
-			slop.ColorScale.ScaleWithColor(color.RGBA{255, 255, 255, uint8(255 * alpha)})
-			screen.DrawImage(splashImage, slop)
+			sharedDrawOp.GeoM.Scale(scale, scale)
+			sharedDrawOp.GeoM.Translate(float64(screenWidth)/2-float64(sw)*scale/2, float64(screenHeight)/2-float64(sh)*scale/2)
+			sharedDrawOp.ColorScale.ScaleWithColor(color.RGBA{255, 255, 255, uint8(255 * alpha)})
+			screen.DrawImage(splashImage, &sharedDrawOp)
 		}
 		// Draw Dark Overlay for text contrast
 		if alpha > 0.5 {
@@ -535,9 +546,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			screen.DrawImage(g.textOverlay, nil)
 		}
 		// Draw Logo with Alpha - Positioned at top
-		lop := &ebiten.DrawImageOptions{}
-		lop.ColorScale.ScaleWithColor(color.RGBA{255, 255, 255, uint8(255 * alpha)})
-		screen.DrawImage(g.logoImg, lop)
+		sharedDrawOp.GeoM.Reset()
+		sharedDrawOp.ColorScale.Reset()
+		sharedDrawOp.ColorScale.ScaleWithColor(color.RGBA{255, 255, 255, uint8(255 * alpha)})
+		screen.DrawImage(g.logoImg, &sharedDrawOp)
 		// Draw Press Enter with Alpha - Positioned at bottom with larger neon text
 		if g.splashTimer > 120 { // Start showing after 2s
 			enterAlpha := (float64(g.splashTimer) - 120.0) / 120.0
@@ -558,12 +570,14 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 	g.offscreen.Fill(bgColor)
 	// Parallax Stars
-	for _, s := range g.stars {
-		op := &ebiten.DrawImageOptions{}
-		op.GeoM.Scale(s.size, s.size)
-		op.GeoM.Translate(s.x, s.y)
-		op.ColorScale.ScaleWithColor(s.color)
-		g.offscreen.DrawImage(whitePixel, op)
+	for i := range g.stars {
+		s := &g.stars[i]
+		sharedDrawOp.GeoM.Reset()
+		sharedDrawOp.ColorScale.Reset()
+		sharedDrawOp.GeoM.Scale(s.size, s.size)
+		sharedDrawOp.GeoM.Translate(s.x, s.y)
+		sharedDrawOp.ColorScale.ScaleWithColor(s.color)
+		g.offscreen.DrawImage(whitePixel, &sharedDrawOp)
 	}
 	g.particles.Draw(g.offscreen)
 	for _, b := range g.bullets {
@@ -576,15 +590,16 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		g.player.Draw(g.offscreen)
 	}
 	g.drawUI(g.offscreen)
-	op := &ebiten.DrawImageOptions{}
+	sharedDrawOp.GeoM.Reset()
+	sharedDrawOp.ColorScale.Reset()
 	if g.shakeFrames > 0 {
 		intensity := g.shakeIntensity
 		if intensity == 0 {
 			intensity = 10.0
 		}
-		op.GeoM.Translate((rand.Float64()-0.5)*intensity, (rand.Float64()-0.5)*intensity)
+		sharedDrawOp.GeoM.Translate((rand.Float64()-0.5)*intensity, (rand.Float64()-0.5)*intensity)
 	}
-	screen.DrawImage(g.offscreen, op)
+	screen.DrawImage(g.offscreen, &sharedDrawOp)
 	if g.isPaused {
 		screen.DrawImage(g.pauseOverlay, nil)
 		DrawNeonText(screen, "PAUSED", float64(screenWidth)/2, 300, 60, color.RGBA{0, 255, 255, 255})
