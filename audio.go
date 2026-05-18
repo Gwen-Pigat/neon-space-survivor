@@ -34,7 +34,8 @@ var (
 	isCrossfading      bool
 	fadeAlpha          float64
 	// Special Effects
-	alarmPlayer *audio.Player
+	alarmPlayer    *audio.Player
+	isMusicStopped bool
 )
 
 func InitAudio() {
@@ -75,6 +76,21 @@ func ResetMusic() {
 	loadTrack(musicState, currentTrack, true)
 	isCrossfading = false
 	fadeAlpha = 0
+	isMusicStopped = false
+}
+func StopMusic() {
+	if currentMusicPlayer != nil {
+		currentMusicPlayer.Close()
+		currentMusicPlayer = nil
+	}
+	if nextMusicPlayer != nil {
+		nextMusicPlayer.Close()
+		nextMusicPlayer = nil
+	}
+	isMusicStopped = true
+}
+func StartMusic() {
+	isMusicStopped = false
 }
 func loadTrack(state int, track int, isCurrent bool) {
 	path := ""
@@ -130,6 +146,10 @@ func UpdateMusic(timer int, started bool) {
 		}
 	}
 	if newState != musicState {
+		if isMusicStopped {
+			// If we explicitly stopped music, wait until isMusicStopped is false to transition.
+			return
+		}
 		if newState == 2 {
 			PlayTransition()
 		}
@@ -140,7 +160,7 @@ func UpdateMusic(timer int, started bool) {
 		fadeAlpha = 0
 		return
 	}
-	if currentMusicPlayer == nil {
+	if currentMusicPlayer == nil || isMusicStopped {
 		return
 	}
 	pos := currentMusicPlayer.Current().Seconds()

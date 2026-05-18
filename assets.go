@@ -171,17 +171,6 @@ func LoadSplash() {
 		splashImage = ebiten.NewImage(screenWidth, screenHeight)
 		splashImage.Fill(color.RGBA{50, 50, 70, 255})
 	}
-
-	// Load other assets
-	bulletImage, _, err = ebitenutil.NewImageFromFile("static/images/bullet.png")
-	if err != nil {
-		fmt.Printf("Failed to load bullet image: %v\n", err)
-		bulletImage = ebiten.NewImage(8, 8)
-		bulletImage.Fill(color.White)
-	}
-	shipImage, _, err = ebitenutil.NewImageFromFile("static/images/player_ship.png")
-	alienImage, _, err = ebitenutil.NewImageFromFile("static/images/alien_enemy.png")
-	bossImage, _, err = ebitenutil.NewImageFromFile("static/images/boss_ship.png")
 }
 func createGlowTexture(size int, clr color.RGBA) *ebiten.Image {
 	img := ebiten.NewImage(size, size)
@@ -199,6 +188,7 @@ func createGlowTexture(size int, clr color.RGBA) *ebiten.Image {
 	}
 	return img
 }
+
 var sharedDrawOp ebiten.DrawImageOptions
 
 func DrawNeonAlien(screen *ebiten.Image, x, y, size float64, clr color.RGBA) {
@@ -488,6 +478,23 @@ func DrawNeonText(screen *ebiten.Image, text string, x, y float64, size float64,
 			scale := float64(s / 24.0)
 			op.GeoM.Scale(scale, scale)
 			op.GeoM.Translate(float64(xf+offset+float32(i)*spacing)-16*scale, float64(yf)-16*scale)
+			op.ColorScale.ScaleWithColor(clr)
+			screen.DrawImage(img, op)
+		}
+	}
+}
+
+func DrawNeonTextLeft(screen *ebiten.Image, text string, x, y float64, size float64, clr color.RGBA) {
+	text = strings.ToUpper(text)
+	xf, yf := float32(x), float32(y)
+	s := float32(size)
+	spacing := s * 0.8
+	for i, char := range text {
+		if img, ok := charTemplates[char]; ok {
+			op := &ebiten.DrawImageOptions{}
+			scale := float64(s / 24.0)
+			op.GeoM.Scale(scale, scale)
+			op.GeoM.Translate(float64(xf+float32(i)*spacing)-16*scale, float64(yf)-16*scale)
 			op.ColorScale.ScaleWithColor(clr)
 			screen.DrawImage(img, op)
 		}

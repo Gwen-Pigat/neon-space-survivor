@@ -16,6 +16,15 @@ type Star struct {
 	size  float64
 	color color.RGBA
 }
+
+type GameMode int
+
+const (
+	ModeRegular GameMode = iota
+	ModeWave
+	ModeBossRush
+)
+
 type Game struct {
 	player         *Player
 	stars          []Star
@@ -34,6 +43,7 @@ type Game struct {
 	timer          int // Frames
 	event10        bool
 	event8         bool
+	event8Started  bool
 	isFinalBoss    bool
 	showUI         bool
 	autoAim        bool
@@ -43,6 +53,8 @@ type Game struct {
 	splashTimer    int
 	isPaused       bool
 	menuSelection  int
+	gameMode       GameMode
+	modeSelection  int
 	// Cached images
 	textOverlay     *ebiten.Image
 	pauseOverlay    *ebiten.Image
@@ -106,7 +118,7 @@ func (g *Game) HandleEscape() error {
 		}
 		if inpututil.IsKeyJustPressed(ebiten.KeyDown) || inpututil.IsKeyJustPressed(ebiten.KeyS) {
 			g.menuSelection++
-			if g.menuSelection > 2 {
+			if g.menuSelection > 3 {
 				g.menuSelection = 0
 			}
 		}
@@ -117,7 +129,20 @@ func (g *Game) HandleEscape() error {
 			case 1: // Reset
 				g.isPaused = false
 				g.Reset()
-			case 2: // Quit
+			case 2: // Main Menu
+				g.Reset()
+				g.started = false
+				g.gameOver = false
+				g.victory = false
+				g.saved = false
+				g.playerName = ""
+				g.timer = 0
+				g.splashTimer = 0
+				g.gameMode = ModeRegular
+				g.modeSelection = 0
+				g.wipeTimer = 0
+				g.overdriveTimer = 0
+			case 3: // Quit
 				return ebiten.Termination
 			}
 		}
@@ -137,7 +162,7 @@ func (g *Game) HandleEndGame() error {
 				g.playerName = g.playerName[:len(g.playerName)-1]
 			}
 			if inpututil.IsKeyJustPressed(ebiten.KeyEnter) && len(g.playerName) > 0 {
-				g.scores.AddScore(g.playerName, g.score, g.timer/60, g.victory, g.kills)
+				g.scores.AddScore(g.playerName, g.score, g.timer/60, g.victory, g.kills, int(g.gameMode))
 				g.saved = true
 			}
 		} else {
@@ -146,20 +171,6 @@ func (g *Game) HandleEndGame() error {
 			}
 		}
 		return nil
-	}
-	return nil
-}
-
-func (g *Game) HandleSplashScreen() error {
-	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
-		g.started = true
-	}
-	for i := range g.stars {
-		g.stars[i].y += g.stars[i].speed
-		if g.stars[i].y > screenHeight {
-			g.stars[i].y = 0
-			g.stars[i].x = rand.Float64() * screenWidth
-		}
 	}
 	return nil
 }
@@ -182,22 +193,23 @@ func (g *Game) HandleKeys() {
 	}
 }
 
-func (g *Game) WipeEnnemies() {
+func (g *Game) WipeEnnemies(includeBosses bool) {
 	if len(g.enemies) > 0 {
 		PlayExplosion()
 	}
+	newEnemies := g.enemies[:0]
 	for _, e := range g.enemies {
-		g.particles.Explosion(e.x, e.y, color.RGBA{255, 100, 255, 255}, 15, 1.0)
-		if e.etype != TypeBoss {
+		if includeBosses || e.etype != TypeBoss {
+			g.particles.Explosion(e.x, e.y, color.RGBA{255, 100, 255, 255}, 15, 1.0)
 			e.Deactivate()
+		} else {
+			newEnemies = append(newEnemies, e)
 		}
 	}
+	g.enemies = newEnemies
 }
 
 func (g *Game) Update() error {
-	if err := g.HandleSplashScreen(); err != nil {
-		return err
-	}
 	if err := g.HandleEscape(); err != nil {
 		return err
 	}
@@ -221,8 +233,21 @@ func (g *Game) Update() error {
 	// Handle Splash Screen
 	if !g.started {
 		g.splashTimer++
-		if inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
+		if inpututil.IsKeyJustPressed(ebiten.KeyUp) || inpututil.IsKeyJustPressed(ebiten.KeyW) {
+			g.modeSelection--
+			if g.modeSelection < 0 {
+				g.modeSelection = 2
+			}
+		}
+		if inpututil.IsKeyJustPressed(ebiten.KeyDown) || inpututil.IsKeyJustPressed(ebiten.KeyS) {
+			g.modeSelection++
+			if g.modeSelection > 2 {
+				g.modeSelection = 0
+			}
+		}
+		if g.splashTimer > 10 && inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
 			g.started = true
+			g.gameMode = GameMode(g.modeSelection)
 		}
 		for i := range g.stars {
 			g.stars[i].y += g.stars[i].speed
@@ -236,7 +261,7 @@ func (g *Game) Update() error {
 	g.timer++
 	if g.wipeTimer > 0 {
 		g.wipeTimer--
-		g.WipeEnnemies()
+		g.WipeEnnemies(false)
 	}
 	useAutoAim := g.autoAim
 	if g.overdriveTimer > 0 {
@@ -261,16 +286,24 @@ func (g *Game) Update() error {
 	}
 	g.player.Update(g.particles, &g.bullets, g.enemies, useAutoAim, fireRate)
 	g.particles.Update()
-	// Spawn boss every minute
-	if g.timer > 0 && g.timer%3600 == 0 && minutes < 11 { // 60fps * 60s
-		g.enemies = append(g.enemies, NewBoss(minutes))
-		PlayBossAppears()
-		g.shakeFrames = 20
+	// Mode specific boss spawning
+	if g.gameMode == ModeBossRush {
+		if g.timer > 0 && g.timer%600 == 0 { // Boss every 10 seconds
+			g.enemies = append(g.enemies, NewBoss(minutes))
+			PlayBossAppears()
+			g.shakeFrames = 20
+		}
+	} else {
+		// Spawn boss every minute
+		if g.timer > 0 && g.timer%3600 == 0 && minutes < 11 { // 60fps * 60s
+			g.enemies = append(g.enemies, NewBoss(minutes))
+			PlayBossAppears()
+			g.shakeFrames = 20
+		}
 	}
 	// Minute 11 Final Boss
 	if minutes == 11 && !g.isFinalBoss {
 		g.isFinalBoss = true
-		ResetMusic()
 		finalBoss := NewBoss(20)
 		finalBoss.hp = 1000
 		finalBoss.maxHP = 1000 // Ensure maxHP matches
@@ -299,24 +332,23 @@ func (g *Game) Update() error {
 	if minutes == 8 {
 		framesInMinute := g.timer % 3600
 		if framesInMinute < 300 { // 5 seconds duration
-			if !g.event8 {
-				ResetMusic()
-				g.WipeEnnemies()
-				g.event8 = true
-				StartAlarm()
-			}
+			g.WipeEnnemies(true)
+			StopMusic()
+			StartAlarm()
 			g.shakeFrames = 2
 			g.shakeIntensity = 30.0 // Shaking a lot
 			spawnThreshold = 999999 // No spawn
+			g.event8 = true
 		} else if framesInMinute >= 300 && g.event8 {
 			// Transition at exactly 5 seconds (runs once)
 			StopAlarm()
+			StartMusic()
+			g.event8 = false
 
 			for i := 0; i < 3; i++ {
 				g.enemies = append(g.enemies, NewBoss(minutes))
 			}
 			PlayBossAppears()
-			g.event8 = false // Reset so this only runs once
 		}
 		if framesInMinute >= 300 {
 			spawnThreshold = 15 // Swarm intensity resumes
@@ -324,19 +356,33 @@ func (g *Game) Update() error {
 	} else if minutes > 8 {
 		spawnThreshold = 15
 	}
+
+	if minutes >= 8 && minutes < 10 && !g.event8 {
+		g.shakeFrames = 2
+		g.shakeIntensity = 10.0 // Shaking a lot
+	}
+
 	// Minute 10 Wipe and Void Wave
 	if minutes >= 10 {
 		g.HandleMinutesEndgame(minutes)
 	} else if minutes < 10 && g.spawnTimer > spawnThreshold && g.wipeTimer <= 0 {
-		// More conservative wave scaling
-		count := 1 + (minutes / 4)
-		if minutes > 2 && g.timer%180 == 0 { // Small chance for double wave after 2 mins
-			count += 2
+		if g.gameMode == ModeBossRush {
+			// No small enemies in Boss Rush
+			g.spawnTimer = 0
+		} else {
+			// More conservative wave scaling
+			count := 1 + (minutes / 4)
+			if g.gameMode == ModeWave {
+				count *= 2 // Double enemies in Wave Mode
+			}
+			if minutes > 2 && g.timer%180 == 0 { // Small chance for double wave after 2 mins
+				count += 2
+			}
+			for i := 0; i < count; i++ {
+				g.enemies = append(g.enemies, NewEnemy(minutes))
+			}
+			g.spawnTimer = 0
 		}
-		for i := 0; i < count; i++ {
-			g.enemies = append(g.enemies, NewEnemy(minutes))
-		}
-		g.spawnTimer = 0
 	}
 	g.HandleCollisionsAndEnnemies(minutes)
 	return nil
@@ -356,7 +402,7 @@ func (g *Game) HandleMinutesEndgame(minutes int) {
 		g.shakeIntensity = 10.0
 	}
 	if !g.event10 {
-		g.WipeEnnemies()
+		g.WipeEnnemies(true)
 		StartAlarm()
 		g.shakeFrames = 120 // Initial big blast shake
 		g.event10 = true
@@ -550,17 +596,23 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		sharedDrawOp.ColorScale.Reset()
 		sharedDrawOp.ColorScale.ScaleWithColor(color.RGBA{255, 255, 255, uint8(255 * alpha)})
 		screen.DrawImage(g.logoImg, &sharedDrawOp)
-		// Draw Press Enter with Alpha - Positioned at bottom with larger neon text
+		// Draw Game Mode Menu with Alpha - Positioned at bottom
 		if g.splashTimer > 120 { // Start showing after 2s
 			enterAlpha := (float64(g.splashTimer) - 120.0) / 120.0
 			if enterAlpha > 1.0 {
 				enterAlpha = 1.0
 			}
-			pulse := (math.Sin(float64(g.splashTimer)*0.03) + 1.0) / 2.0
-			enterAlpha *= (0.4 + 0.6*pulse)
-			pop := &ebiten.DrawImageOptions{}
-			pop.ColorScale.ScaleWithColor(color.RGBA{255, 255, 255, uint8(255 * enterAlpha)})
-			screen.DrawImage(g.promptImg, pop)
+			modes := []string{"REGULAR MODE", "WAVE MODE", "BOSS RUSH"}
+			for i, mode := range modes {
+				clr := color.RGBA{200, 200, 200, uint8(150 * enterAlpha)}
+				size := 20.0
+				if i == g.modeSelection {
+					pulse := (math.Sin(float64(g.splashTimer)*0.1) + 1.0) / 2.0
+					clr = color.RGBA{uint8(100 + 155*pulse), 255, 255, uint8(255 * enterAlpha)}
+					size = 28.0
+				}
+				DrawNeonText(screen, mode, float64(screenWidth)/2, float64(750+i*60), size, clr)
+			}
 		}
 		return
 	}
@@ -603,7 +655,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	if g.isPaused {
 		screen.DrawImage(g.pauseOverlay, nil)
 		DrawNeonText(screen, "PAUSED", float64(screenWidth)/2, 300, 60, color.RGBA{0, 255, 255, 255})
-		options := []string{"RESUME", "RESTART", "QUIT"}
+		options := []string{"RESUME", "RESTART", "MAIN MENU", "QUIT"}
 		for i, opt := range options {
 			clr := color.RGBA{255, 255, 255, 150}
 			size := 30.0
@@ -617,7 +669,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 }
 func (g *Game) drawUI(screen *ebiten.Image) {
 	s := fmt.Sprintf("SCORE: %06d | KILLS: %d | TIME: %02d:%02d", g.score, g.kills, (g.timer/60)/60, (g.timer/60)%60)
-	DrawNeonText(screen, s, 250, 20, 15, color.RGBA{255, 255, 255, 200})
+	DrawNeonText(screen, s, 300, 20, 15, color.RGBA{255, 255, 255, 200})
 	if g.overdriveTimer > 0 {
 		pulse := math.Sin(float64(g.timer)*0.2)*0.5 + 0.5
 		DrawNeonText(screen, "OVERDRIVE ACTIVE", float64(screenWidth)/2, 100, 30, color.RGBA{255, uint8(255 * pulse), 0, 255})
@@ -655,7 +707,7 @@ func (g *Game) drawUI(screen *ebiten.Image) {
 	DrawNeonText(screen, hpStr, bx+barW/2, by+10, 10, color.RGBA{255, 255, 255, 255})
 	// Draw Top 5 Highscores
 	DrawNeonText(screen, "TOP SCORES", 80, 100, 15, color.RGBA{0, 255, 255, 255})
-	top := g.scores.GetTop(5)
+	top := g.scores.GetTop(5, int(g.gameMode))
 	for i, entry := range top {
 		timeStr := fmt.Sprintf("%02d:%02d", entry.Time/60, entry.Time%60)
 		// Colored indicator: Green for Win, Red for Loss
@@ -669,8 +721,23 @@ func (g *Game) drawUI(screen *ebiten.Image) {
 		indOp.GeoM.Translate(20, float64(135+i*30))
 		indOp.ColorScale.ScaleWithColor(indicatorClr)
 		screen.DrawImage(whitePixel, indOp)
-		scoreStr := fmt.Sprintf("%d. %-10s %06d [%s] K:%d", i+1, entry.Name, entry.Score, timeStr, entry.Kills)
-		DrawNeonText(screen, scoreStr, 210, float64(140+i*30), 12, color.RGBA{255, 255, 255, 200})
+
+		modeChar := "R"
+		switch entry.GameMode {
+		case int(ModeWave):
+			modeChar = "W"
+		case int(ModeBossRush):
+			modeChar = "B"
+		}
+
+		y := float64(140 + i*30)
+		clr := color.RGBA{255, 255, 255, 200}
+		DrawNeonTextLeft(screen, fmt.Sprintf("%d.", i+1), 40, y, 12, clr)
+		DrawNeonTextLeft(screen, entry.Name, 75, y, 12, clr)
+		DrawNeonTextLeft(screen, fmt.Sprintf("%06d", entry.Score), 190, y, 12, clr)
+		DrawNeonTextLeft(screen, timeStr, 270, y, 12, clr)
+		DrawNeonTextLeft(screen, fmt.Sprintf("K:%d", entry.Kills), 335, y, 12, clr)
+		DrawNeonTextLeft(screen, "M:"+modeChar, 400, y, 12, clr)
 	}
 	if g.gameOver || g.victory {
 		// Dim the background
