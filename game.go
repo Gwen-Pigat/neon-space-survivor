@@ -49,8 +49,6 @@ func (g *Game) DrawCopyrightFooter(screen *ebiten.Image) {
 		clr = color.RGBA{uint8(100 + 155*pulse), 255, 255, 255}
 		size = 13.0
 		DrawNeonText(screen, CopyrightText, cx, cy, size, clr)
-	} else {
-		DrawNeonText(screen, CopyrightText, cx, cy, size, clr)
 	}
 }
 
@@ -338,7 +336,9 @@ func (g *Game) Update() error {
 	}
 	// Calculate fire rate based on minutes (starts at 12, decreases by 1 every minute, min 3)
 	fireRate := 12 - minutes
-	if minutes >= 8 {
+	if g.gameMode == ModeHard {
+		fireRate = 2 // Maximum fire rate from the start in Hard Mode
+	} else if minutes >= 8 {
 		fireRate = 2 // Massive boost at minute 8
 	} else if fireRate < 3 {
 		fireRate = 3
@@ -439,10 +439,6 @@ func (g *Game) Update() error {
 			g.spawnTimer = 0
 		} else {
 			count := 1 + (minutes / 4)
-			if g.gameMode == ModeHard {
-				count = 4 + minutes*2 // Massive enemy swarms in Hard Mode
-				spawnThreshold = 6    // Ultra-fast spawn rate
-			}
 			if minutes > 2 && g.timer%180 == 0 { // Extra wave boost after 2 mins
 				count += 2
 			}
