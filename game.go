@@ -5,10 +5,52 @@ import (
 	"image/color"
 	"math"
 	"math/rand"
+	"os/exec"
+	"runtime"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
+
+func openURL(url string) {
+	var err error
+	switch runtime.GOOS {
+	case "linux":
+		err = exec.Command("xdg-open", url).Start()
+	case "windows":
+		err = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+	case "darwin":
+		err = exec.Command("open", url).Start()
+	}
+	_ = err
+}
+
+func DrawCopyrightFooter(screen *ebiten.Image) {
+	copyrightText := "© Gwen Pigat - gwen.orizenh.com"
+	cx := float64(screenWidth) / 2.0
+	cy := float64(screenHeight - 35)
+
+	mx, my := ebiten.CursorPosition()
+	minX := int(cx - 240)
+	maxX := int(cx + 240)
+	minY := int(cy - 20)
+	maxY := int(cy + 15)
+
+	isHover := mx >= minX && mx <= maxX && my >= minY && my <= maxY
+
+	clr := color.RGBA{150, 150, 180, 200}
+	size := 16.0
+
+	if isHover {
+		clr = color.RGBA{0, 255, 255, 255}
+		size = 18.0
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+			openURL("https://gwen.orizenh.com")
+		}
+	}
+
+	DrawNeonText(screen, copyrightText, cx, cy, size, clr)
+}
 
 type Star struct {
 	x, y  float64
@@ -21,7 +63,7 @@ type GameMode int
 
 const (
 	ModeRegular GameMode = iota
-	ModeWave
+	ModeHard
 	ModeBossRush
 )
 
@@ -224,7 +266,7 @@ func (g *Game) Update() error {
 		return nil
 	}
 
-	UpdateMusic(g.timer, g.started, g.gameMode == ModeWave)
+	UpdateMusic(g.timer, g.started, g.gameMode == ModeHard)
 	if g.shakeFrames > 0 {
 		g.shakeFrames--
 	}
@@ -248,6 +290,9 @@ func (g *Game) Update() error {
 		if g.splashTimer > 10 && inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
 			g.started = true
 			g.gameMode = GameMode(g.modeSelection)
+			if g.gameMode == ModeHard {
+				g.autoAim = true
+			}
 		}
 		for i := range g.stars {
 			g.stars[i].y += g.stars[i].speed
@@ -362,6 +407,12 @@ func (g *Game) Update() error {
 		g.shakeIntensity = 10.0 // Shaking a lot
 	}
 
+	// 30-Second Boss Spawns in Hard Mode
+	if g.gameMode == ModeHard && g.started && g.timer > 0 && g.timer%1800 == 0 {
+		g.enemies = append(g.enemies, NewBoss(minutes))
+		PlayBossAppears()
+	}
+
 	// Minute 10 Wipe and Void Wave
 	if minutes >= 10 {
 		g.HandleMinutesEndgame(minutes)
@@ -370,12 +421,12 @@ func (g *Game) Update() error {
 			// No small enemies in Boss Rush
 			g.spawnTimer = 0
 		} else {
-			// More conservative wave scaling
 			count := 1 + (minutes / 4)
-			if g.gameMode == ModeWave {
-				count *= 2 // Double enemies in Wave Mode
+			if g.gameMode == ModeHard {
+				count = 4 + minutes*2 // Massive enemy swarms in Hard Mode
+				spawnThreshold = 6    // Ultra-fast spawn rate
 			}
-			if minutes > 2 && g.timer%180 == 0 { // Small chance for double wave after 2 mins
+			if minutes > 2 && g.timer%180 == 0 { // Extra wave boost after 2 mins
 				count += 2
 			}
 			for i := 0; i < count; i++ {
@@ -425,10 +476,9 @@ func (g *Game) HandleMinutesEndgame(minutes int) {
 
 func (g *Game) HandleCollisionsAndEnnemies(minutes int) error {
 	// Update enemies
-	isWave := g.gameMode == ModeWave
 	for i := 0; i < len(g.enemies); i++ {
 		e := g.enemies[i]
-		e.Update(g.player.x, g.player.y, isWave)
+		e.Update(g.player.x, g.player.y)
 		// Collision with player
 		dx := e.x - g.player.x
 		dy := e.y - g.player.y
@@ -506,7 +556,10 @@ func (g *Game) HandleCollisionsAndEnnemies(minutes int) error {
 							g.victory = true
 							PlayVictory()
 						}
-						g.wipeTimer = 120 // 2 second wipe
+						// Boss kill does NOT wipe map in Hard Mode
+						if g.gameMode != ModeHard {
+							g.wipeTimer = 120 // 2 second wipe
+						}
 					}
 					g.particles.Explosion(e.x, e.y, explClr, 20, explSize)
 					PlayExplosion()
@@ -516,7 +569,8 @@ func (g *Game) HandleCollisionsAndEnnemies(minutes int) error {
 					g.enemies = g.enemies[:len(g.enemies)-1]
 					g.score += scoreGain
 					g.kills++
-					if g.kills > 0 && g.kills%150 == 0 {
+					// No Overdrive in Hard Mode
+					if g.gameMode != ModeHard && g.kills > 0 && g.kills%150 == 0 {
 						g.overdriveTimer = 300 // 5 second overdrive
 						g.shakeFrames = 100
 						g.shakeIntensity = 20.0
@@ -603,7 +657,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			if enterAlpha > 1.0 {
 				enterAlpha = 1.0
 			}
-			modes := []string{"REGULAR MODE", "WAVE MODE", "BOSS RUSH"}
+			modes := []string{"REGULAR MODE", "HARD MODE", "BOSS RUSH"}
 			for i, mode := range modes {
 				clr := color.RGBA{200, 200, 200, uint8(150 * enterAlpha)}
 				size := 20.0
@@ -615,6 +669,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 				DrawNeonText(screen, mode, float64(screenWidth)/2, float64(750+i*60), size, clr)
 			}
 		}
+		DrawCopyrightFooter(screen)
 		return
 	}
 	bgColor := color.RGBA{2, 2, 10, 255}
@@ -725,8 +780,8 @@ func (g *Game) drawUI(screen *ebiten.Image) {
 
 		modeChar := "R"
 		switch entry.GameMode {
-		case int(ModeWave):
-			modeChar = "W"
+		case int(ModeHard):
+			modeChar = "H"
 		case int(ModeBossRush):
 			modeChar = "B"
 		}
@@ -740,6 +795,7 @@ func (g *Game) drawUI(screen *ebiten.Image) {
 		DrawNeonTextLeft(screen, fmt.Sprintf("K:%d", entry.Kills), 335, y, 12, clr)
 		DrawNeonTextLeft(screen, "M:"+modeChar, 400, y, 12, clr)
 	}
+	DrawCopyrightFooter(screen)
 	if g.gameOver || g.victory {
 		// Dim the background
 		if g.victory {

@@ -127,23 +127,17 @@ func NewBoss(minutes int) *Enemy {
 	e.rotation = math.Atan2(screenHeight/2-y, screenWidth/2-x)
 	return e
 }
-func (e *Enemy) Update(px, py float64, isWaveMode bool) {
-	effectiveSpeed := e.speed
-	if isWaveMode {
-		beat := GetBeatPulse()
-		effectiveSpeed *= (1.0 + beat*0.65) // Pulse speed up to 65% faster on beat in Wave Mode
-	}
-
+func (e *Enemy) Update(px, py float64) {
 	switch e.etype {
 	case TypeChaser:
 		angle := math.Atan2(py-e.y, px-e.x)
-		e.vx = math.Cos(angle) * effectiveSpeed
-		e.vy = math.Sin(angle) * effectiveSpeed
+		e.vx = math.Cos(angle) * e.speed
+		e.vy = math.Sin(angle) * e.speed
 	case TypeCharger:
 		if e.state == 0 { // Move towards player slowly
 			angle := math.Atan2(py-e.y, px-e.x)
-			e.vx = math.Cos(angle) * effectiveSpeed
-			e.vy = math.Sin(angle) * effectiveSpeed
+			e.vx = math.Cos(angle) * e.speed
+			e.vy = math.Sin(angle) * e.speed
 			e.timer++
 			if e.timer > 120 {
 				e.state = 1
@@ -162,8 +156,8 @@ func (e *Enemy) Update(px, py float64, isWaveMode bool) {
 	case TypeBoss, TypeElite:
 		// Slow but unstoppable or fast and random
 		angle := math.Atan2(py-e.y, px-e.x)
-		e.vx = math.Cos(angle) * effectiveSpeed
-		e.vy = math.Sin(angle) * effectiveSpeed
+		e.vx = math.Cos(angle) * e.speed
+		e.vy = math.Sin(angle) * e.speed
 	}
 	e.x += e.vx
 	e.y += e.vy

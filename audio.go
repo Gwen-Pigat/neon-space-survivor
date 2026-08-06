@@ -305,7 +305,7 @@ func loadTrack(state int, track int, isCurrent bool) {
 	}
 }
 
-func UpdateMusic(timer int, started bool, isWaveMode bool) {
+func UpdateMusic(timer int, started bool, isHardMode bool) {
 	if audioContext == nil {
 		return
 	}
@@ -317,8 +317,8 @@ func UpdateMusic(timer int, started bool, isWaveMode bool) {
 	minutes := timer / 3600
 	newState := 0
 	if started {
-		if isWaveMode {
-			newState = 5 // Wave Mode track
+		if isHardMode {
+			newState = 5 // Hard Mode track (wave_mode.mp3)
 		} else if minutes >= 8 {
 			newState = 2
 		} else {
