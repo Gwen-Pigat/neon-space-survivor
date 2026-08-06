@@ -15,8 +15,8 @@ import (
 const (
 	AuthorWebsiteURL      = "https://gwen.orizenh.com"
 	CopyrightText         = "Made by Gwen Pigat"
-	SplashOptionCopyright = 3
-	TotalSplashOptions    = 4
+	SplashOptionCopyright = 2
+	TotalSplashOptions    = 3
 )
 
 func openURL(url string) {
@@ -41,15 +41,15 @@ func (g *Game) DrawCopyrightFooter(screen *ebiten.Image) {
 	cy := float64(screenHeight - 35)
 
 	isSelected := g.modeSelection == SplashOptionCopyright && !g.started
-	clr := color.RGBA{120, 120, 150, 180}
-	size := 11.0
+	clr := color.RGBA{180, 180, 210, 255}
+	size := 14.0
 
 	if isSelected {
 		pulse := (math.Sin(float64(g.splashTimer)*0.15) + 1.0) / 2.0
 		clr = color.RGBA{uint8(100 + 155*pulse), 255, 255, 255}
-		size = 13.0
-		DrawNeonText(screen, CopyrightText, cx, cy, size, clr)
+		size = 18.0
 	}
+	DrawNeonText(screen, CopyrightText, cx, cy, size, clr)
 }
 
 type Star struct {
@@ -287,7 +287,7 @@ func (g *Game) HandleSplashInput() {
 			g.started = true
 			g.gameMode = GameMode(g.modeSelection)
 			if g.gameMode == ModeHard {
-				g.autoAim = true
+				g.autoAim = false
 			}
 		}
 	}
@@ -332,6 +332,9 @@ func (g *Game) Update() error {
 		g.WipeEnnemies(false)
 	}
 	useAutoAim := g.autoAim
+	if g.gameMode == ModeHard {
+		useAutoAim = false
+	}
 	if g.overdriveTimer > 0 {
 		g.overdriveTimer--
 		useAutoAim = true
@@ -345,7 +348,7 @@ func (g *Game) Update() error {
 	// Calculate fire rate based on minutes (starts at 12, decreases by 1 every minute, min 3)
 	fireRate := 12 - minutes
 	if g.gameMode == ModeHard {
-		fireRate = 2 // Maximum fire rate from the start in Hard Mode
+		fireRate = 1 // Maximum fire rate from the start in Hard Mode
 	} else if minutes >= 8 {
 		fireRate = 2 // Massive boost at minute 8
 	} else if fireRate < 3 {
@@ -395,11 +398,11 @@ func (g *Game) Update() error {
 	// Spawn enemies
 	g.spawnTimer++
 	spawnThreshold := 60 - (minutes * 5)
-	if spawnThreshold < 25 {
+	if spawnThreshold < 25 && g.gameMode != ModeHard {
 		spawnThreshold = 25
 	}
 	if g.gameMode == ModeHard {
-		spawnThreshold = 5 // Extreme rapid spawn rate right from minute 0!
+		spawnThreshold = 10 // Lowered spawn rate for Hard Mode
 	}
 	// Minute 8 Event: Gradual Shake then Swarm
 	if minutes == 8 {
@@ -435,8 +438,8 @@ func (g *Game) Update() error {
 		g.shakeIntensity = 10.0 // Shaking a lot
 	}
 
-	// 30-Second Boss Spawns in Hard Mode
-	if g.gameMode == ModeHard && g.started && g.timer > 0 && g.timer%1800 == 0 {
+	// 20-Second Boss Spawns in Hard Mode
+	if g.gameMode == ModeHard && g.started && g.timer > 0 && g.timer%600 == 0 {
 		g.enemies = append(g.enemies, NewBoss(minutes))
 		PlayBossAppears()
 	}
@@ -451,7 +454,7 @@ func (g *Game) Update() error {
 		} else {
 			count := 1 + (minutes / 4)
 			if g.gameMode == ModeHard {
-				count = 6 + (minutes * 2) // Large swarms right from minute 0!
+				count = 1 + (minutes / 3) // Lowered swarm size for Hard Mode
 			}
 			if minutes > 2 && g.timer%180 == 0 { // Extra wave boost after 2 mins
 				count += 2
@@ -514,6 +517,9 @@ func (g *Game) HandleCollisionsAndEnnemies(minutes int) error {
 			// Damage calculation
 			damage := 15.0
 			oneShot := false
+			if g.gameMode == ModeHard {
+				oneShot = true
+			}
 			switch e.etype {
 			case TypeBoss:
 				if g.isFinalBoss {
@@ -684,7 +690,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			if enterAlpha > 1.0 {
 				enterAlpha = 1.0
 			}
-			modes := []string{"REGULAR MODE", "HARD MODE", "BOSS RUSH"}
+			modes := []string{"REGULAR MODE", "HARD MODE"}
 			for i, mode := range modes {
 				clr := color.RGBA{200, 200, 200, uint8(150 * enterAlpha)}
 				size := 20.0
@@ -718,8 +724,9 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	for _, b := range g.bullets {
 		b.Draw(g.offscreen)
 	}
+	showEnemyHealth := g.showUI && g.gameMode != ModeHard
 	for _, e := range g.enemies {
-		e.Draw(g.offscreen, g.showUI)
+		e.Draw(g.offscreen, showEnemyHealth)
 	}
 	if !g.gameOver {
 		g.player.Draw(g.offscreen)
@@ -757,37 +764,41 @@ func (g *Game) drawUI(screen *ebiten.Image) {
 		pulse := math.Sin(float64(g.timer)*0.2)*0.5 + 0.5
 		DrawNeonText(screen, "OVERDRIVE ACTIVE", float64(screenWidth)/2, 100, 30, color.RGBA{255, uint8(255 * pulse), 0, 255})
 	}
-	displayHealth := "ON"
-	if !g.showUI {
-		displayHealth = "OFF"
-	}
-	DrawNeonText(screen, "DISPLAY HEALTH [I]: "+displayHealth, 130, 60, 12, color.RGBA{255, 255, 255, 150})
-	// Player HP Bar at top center
-	barW := 400.0
-	barH := 20.0
-	bx := float64(screenWidth)/2 - barW/2
-	by := 20.0
-	// BG
-	bgOp := &ebiten.DrawImageOptions{}
-	bgOp.GeoM.Scale(barW, barH)
-	bgOp.GeoM.Translate(bx, by)
-	bgOp.ColorScale.ScaleWithColor(color.RGBA{50, 0, 0, 150})
-	screen.DrawImage(whitePixel, bgOp)
-	// Fill
-	hpRatio := g.player.hp / g.player.maxHP
-	if hpRatio < 0 {
-		hpRatio = 0
-	}
-	hpClr := color.RGBA{uint8(255 * (1 - hpRatio)), uint8(255 * hpRatio), uint8(255 * hpRatio), 200}
+	if g.gameMode != ModeHard {
+		displayHealth := "ON"
+		if !g.showUI {
+			displayHealth = "OFF"
+		}
+		DrawNeonText(screen, "DISPLAY HEALTH [I]: "+displayHealth, 130, 60, 12, color.RGBA{255, 255, 255, 150})
+		if g.showUI {
+			// Player HP Bar at top center
+			barW := 400.0
+			barH := 20.0
+			bx := float64(screenWidth)/2 - barW/2
+			by := 20.0
+			// BG
+			bgOp := &ebiten.DrawImageOptions{}
+			bgOp.GeoM.Scale(barW, barH)
+			bgOp.GeoM.Translate(bx, by)
+			bgOp.ColorScale.ScaleWithColor(color.RGBA{50, 0, 0, 150})
+			screen.DrawImage(whitePixel, bgOp)
+			// Fill
+			hpRatio := g.player.hp / g.player.maxHP
+			if hpRatio < 0 {
+				hpRatio = 0
+			}
+			hpClr := color.RGBA{uint8(255 * (1 - hpRatio)), uint8(255 * hpRatio), uint8(255 * hpRatio), 200}
 
-	fillOp := &ebiten.DrawImageOptions{}
-	fillOp.GeoM.Scale(barW*hpRatio, barH)
-	fillOp.GeoM.Translate(bx, by)
-	fillOp.ColorScale.ScaleWithColor(hpClr)
-	screen.DrawImage(whitePixel, fillOp)
-	// Text
-	hpStr := fmt.Sprintf("HULL INTEGRITY: %d%%", int(hpRatio*100))
-	DrawNeonText(screen, hpStr, bx+barW/2, by+10, 10, color.RGBA{255, 255, 255, 255})
+			fillOp := &ebiten.DrawImageOptions{}
+			fillOp.GeoM.Scale(barW*hpRatio, barH)
+			fillOp.GeoM.Translate(bx, by)
+			fillOp.ColorScale.ScaleWithColor(hpClr)
+			screen.DrawImage(whitePixel, fillOp)
+			// Text
+			hpStr := fmt.Sprintf("HULL INTEGRITY: %d%%", int(hpRatio*100))
+			DrawNeonText(screen, hpStr, bx+barW/2, by+10, 10, color.RGBA{255, 255, 255, 255})
+		}
+	}
 	// Draw Top 5 Highscores
 	DrawNeonText(screen, "TOP SCORES", 80, 100, 15, color.RGBA{0, 255, 255, 255})
 	top := g.scores.GetTop(5, int(g.gameMode))
@@ -822,7 +833,6 @@ func (g *Game) drawUI(screen *ebiten.Image) {
 		DrawNeonTextLeft(screen, fmt.Sprintf("K:%d", entry.Kills), 335, y, 12, clr)
 		DrawNeonTextLeft(screen, "M:"+modeChar, 400, y, 12, clr)
 	}
-	g.DrawCopyrightFooter(screen)
 	if g.gameOver || g.victory {
 		// Dim the background
 		if g.victory {
@@ -856,9 +866,14 @@ func drawWithGlow(screen *ebiten.Image, drawFunc func(*ebiten.Image), intensity 
 }
 func (g *Game) Reset() {
 	ResetMusic()
+	currentMode := g.gameMode
 	newGame := NewGame(false)
-	// Preserve the scores manager so we don't reload from disk unnecessarily
-	// but the NewGame already reloads them, which is fine.
+	newGame.gameMode = currentMode
+	newGame.modeSelection = int(currentMode)
+	newGame.started = true
+	if currentMode == ModeHard {
+		newGame.autoAim = false
+	}
 	*g = *newGame
 }
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
