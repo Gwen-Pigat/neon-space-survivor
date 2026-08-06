@@ -12,6 +12,13 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
 
+const (
+	AuthorWebsiteURL      = "https://gwen.orizenh.com"
+	CopyrightText         = "© Gwen Pigat"
+	SplashOptionCopyright = 3
+	TotalSplashOptions    = 4
+)
+
 func openURL(url string) {
 	var err error
 	switch runtime.GOOS {
@@ -25,31 +32,27 @@ func openURL(url string) {
 	_ = err
 }
 
-func DrawCopyrightFooter(screen *ebiten.Image) {
-	copyrightText := "© Gwen Pigat - gwen.orizenh.com"
+func OpenAuthorWebsite() {
+	openURL(AuthorWebsiteURL)
+}
+
+func (g *Game) DrawCopyrightFooter(screen *ebiten.Image) {
 	cx := float64(screenWidth) / 2.0
 	cy := float64(screenHeight - 35)
 
-	mx, my := ebiten.CursorPosition()
-	minX := int(cx - 240)
-	maxX := int(cx + 240)
-	minY := int(cy - 20)
-	maxY := int(cy + 15)
+	isSelected := g.modeSelection == SplashOptionCopyright && !g.started
+	clr := color.RGBA{120, 120, 150, 180}
+	size := 11.0
 
-	isHover := mx >= minX && mx <= maxX && my >= minY && my <= maxY
-
-	clr := color.RGBA{150, 150, 180, 200}
-	size := 16.0
-
-	if isHover {
-		clr = color.RGBA{0, 255, 255, 255}
-		size = 18.0
-		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-			openURL("https://gwen.orizenh.com")
-		}
+	if isSelected {
+		pulse := (math.Sin(float64(g.splashTimer)*0.15) + 1.0) / 2.0
+		clr = color.RGBA{uint8(100 + 155*pulse), 255, 255, 255}
+		size = 13.0
+		DrawNeonText(screen, CopyrightText, cx, cy, size, clr)
+		DrawNeonText(screen, "gwen.orizenh.com [PRESS ENTER]", cx, cy+18, 10.0, color.RGBA{0, 220, 255, 220})
+	} else {
+		DrawNeonText(screen, CopyrightText, cx, cy, size, clr)
 	}
-
-	DrawNeonText(screen, copyrightText, cx, cy, size, clr)
 }
 
 type Star struct {
@@ -251,6 +254,40 @@ func (g *Game) WipeEnnemies(includeBosses bool) {
 	g.enemies = newEnemies
 }
 
+func (g *Game) HandleSplashInput() {
+	g.splashTimer++
+	if inpututil.IsKeyJustPressed(ebiten.KeyUp) || inpututil.IsKeyJustPressed(ebiten.KeyW) {
+		g.modeSelection--
+		if g.modeSelection < 0 {
+			g.modeSelection = TotalSplashOptions - 1
+		}
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyDown) || inpututil.IsKeyJustPressed(ebiten.KeyS) {
+		g.modeSelection++
+		if g.modeSelection >= TotalSplashOptions {
+			g.modeSelection = 0
+		}
+	}
+	mx, my := ebiten.CursorPosition()
+	if my >= screenHeight-50 && mx >= screenWidth/2-150 && mx <= screenWidth/2+150 {
+		g.modeSelection = SplashOptionCopyright
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+			OpenAuthorWebsite()
+		}
+	}
+	if g.splashTimer > 10 && inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
+		if g.modeSelection == SplashOptionCopyright {
+			OpenAuthorWebsite()
+		} else {
+			g.started = true
+			g.gameMode = GameMode(g.modeSelection)
+			if g.gameMode == ModeHard {
+				g.autoAim = true
+			}
+		}
+	}
+}
+
 func (g *Game) Update() error {
 	if err := g.HandleEscape(); err != nil {
 		return err
@@ -274,26 +311,7 @@ func (g *Game) Update() error {
 
 	// Handle Splash Screen
 	if !g.started {
-		g.splashTimer++
-		if inpututil.IsKeyJustPressed(ebiten.KeyUp) || inpututil.IsKeyJustPressed(ebiten.KeyW) {
-			g.modeSelection--
-			if g.modeSelection < 0 {
-				g.modeSelection = 2
-			}
-		}
-		if inpututil.IsKeyJustPressed(ebiten.KeyDown) || inpututil.IsKeyJustPressed(ebiten.KeyS) {
-			g.modeSelection++
-			if g.modeSelection > 2 {
-				g.modeSelection = 0
-			}
-		}
-		if g.splashTimer > 10 && inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
-			g.started = true
-			g.gameMode = GameMode(g.modeSelection)
-			if g.gameMode == ModeHard {
-				g.autoAim = true
-			}
-		}
+		g.HandleSplashInput()
 		for i := range g.stars {
 			g.stars[i].y += g.stars[i].speed
 			if g.stars[i].y > screenHeight {
@@ -669,7 +687,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 				DrawNeonText(screen, mode, float64(screenWidth)/2, float64(750+i*60), size, clr)
 			}
 		}
-		DrawCopyrightFooter(screen)
+		g.DrawCopyrightFooter(screen)
 		return
 	}
 	bgColor := color.RGBA{2, 2, 10, 255}
@@ -795,7 +813,7 @@ func (g *Game) drawUI(screen *ebiten.Image) {
 		DrawNeonTextLeft(screen, fmt.Sprintf("K:%d", entry.Kills), 335, y, 12, clr)
 		DrawNeonTextLeft(screen, "M:"+modeChar, 400, y, 12, clr)
 	}
-	DrawCopyrightFooter(screen)
+	g.DrawCopyrightFooter(screen)
 	if g.gameOver || g.victory {
 		// Dim the background
 		if g.victory {
