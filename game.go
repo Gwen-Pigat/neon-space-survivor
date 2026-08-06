@@ -14,7 +14,7 @@ import (
 
 const (
 	AuthorWebsiteURL      = "https://gwen.orizenh.com"
-	CopyrightText         = "© Gwen Pigat"
+	CopyrightText         = "Made by Gwen Pigat"
 	SplashOptionCopyright = 3
 	TotalSplashOptions    = 4
 )
@@ -49,7 +49,6 @@ func (g *Game) DrawCopyrightFooter(screen *ebiten.Image) {
 		clr = color.RGBA{uint8(100 + 155*pulse), 255, 255, 255}
 		size = 13.0
 		DrawNeonText(screen, CopyrightText, cx, cy, size, clr)
-		DrawNeonText(screen, "gwen.orizenh.com [PRESS ENTER]", cx, cy+18, 10.0, color.RGBA{0, 220, 255, 220})
 	} else {
 		DrawNeonText(screen, CopyrightText, cx, cy, size, clr)
 	}
