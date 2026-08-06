@@ -244,6 +244,24 @@ func StopMusic() {
 	isMusicStopped = true
 }
 
+func PauseMusic() {
+	if currentMusicPlayer != nil && currentMusicPlayer.IsPlaying() {
+		currentMusicPlayer.Pause()
+	}
+	if nextMusicPlayer != nil && nextMusicPlayer.IsPlaying() {
+		nextMusicPlayer.Pause()
+	}
+}
+
+func ResumeMusic() {
+	if currentMusicPlayer != nil && !currentMusicPlayer.IsPlaying() && !isMusicStopped {
+		currentMusicPlayer.Play()
+	}
+	if nextMusicPlayer != nil && !nextMusicPlayer.IsPlaying() && !isMusicStopped {
+		nextMusicPlayer.Play()
+	}
+}
+
 func StartMusic() {
 	isMusicStopped = false
 }

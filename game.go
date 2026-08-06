@@ -150,6 +150,11 @@ func (g *Game) HandleEscape() error {
 	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) && g.started && !g.gameOver && !g.victory {
 		g.isPaused = !g.isPaused
 		g.menuSelection = 0
+		if g.isPaused {
+			PauseMusic()
+		} else {
+			ResumeMusic()
+		}
 	}
 	if g.isPaused {
 		if inpututil.IsKeyJustPressed(ebiten.KeyUp) || inpututil.IsKeyJustPressed(ebiten.KeyW) {
@@ -168,10 +173,13 @@ func (g *Game) HandleEscape() error {
 			switch g.menuSelection {
 			case 0: // Resume
 				g.isPaused = false
+				ResumeMusic()
 			case 1: // Reset
 				g.isPaused = false
+				ResumeMusic()
 				g.Reset()
 			case 2: // Main Menu
+				ResumeMusic()
 				g.Reset()
 				g.started = false
 				g.gameOver = false
@@ -390,6 +398,9 @@ func (g *Game) Update() error {
 	if spawnThreshold < 25 {
 		spawnThreshold = 25
 	}
+	if g.gameMode == ModeHard {
+		spawnThreshold = 5 // Extreme rapid spawn rate right from minute 0!
+	}
 	// Minute 8 Event: Gradual Shake then Swarm
 	if minutes == 8 {
 		framesInMinute := g.timer % 3600
@@ -439,6 +450,9 @@ func (g *Game) Update() error {
 			g.spawnTimer = 0
 		} else {
 			count := 1 + (minutes / 4)
+			if g.gameMode == ModeHard {
+				count = 6 + (minutes * 2) // Large swarms right from minute 0!
+			}
 			if minutes > 2 && g.timer%180 == 0 { // Extra wave boost after 2 mins
 				count += 2
 			}
