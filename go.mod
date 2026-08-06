@@ -1,4 +1,4 @@
-module github.com/pixofvoid/ebiten-game
+module github.com/pixofvoid/neon-space-survivor
 
 go 1.26.1
 

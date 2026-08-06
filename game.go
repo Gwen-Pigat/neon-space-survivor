@@ -224,7 +224,7 @@ func (g *Game) Update() error {
 		return nil
 	}
 
-	UpdateMusic(g.timer, g.started)
+	UpdateMusic(g.timer, g.started, g.gameMode == ModeWave)
 	if g.shakeFrames > 0 {
 		g.shakeFrames--
 	}
@@ -425,9 +425,10 @@ func (g *Game) HandleMinutesEndgame(minutes int) {
 
 func (g *Game) HandleCollisionsAndEnnemies(minutes int) error {
 	// Update enemies
+	isWave := g.gameMode == ModeWave
 	for i := 0; i < len(g.enemies); i++ {
 		e := g.enemies[i]
-		e.Update(g.player.x, g.player.y)
+		e.Update(g.player.x, g.player.y, isWave)
 		// Collision with player
 		dx := e.x - g.player.x
 		dy := e.y - g.player.y

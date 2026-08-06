@@ -1,3 +1,6 @@
-ebiten-game
 neon-space-survivor
+neon-space-survivor.exe
 scores.db
+*:Zone.Identifier
+*.log
+

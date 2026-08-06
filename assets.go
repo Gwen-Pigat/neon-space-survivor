@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"image"
 	"image/color"
 	_ "image/jpeg"
 	_ "image/png"
@@ -164,7 +166,14 @@ func drawLetterRaw(screen *ebiten.Image, char rune, x, y, size float32, clr colo
 	}
 }
 func LoadSplash() {
-	var err error
+	data, err := assetsFS.ReadFile("static/images/splashscreen.png")
+	if err == nil {
+		img, _, err2 := image.Decode(bytes.NewReader(data))
+		if err2 == nil {
+			splashImage = ebiten.NewImageFromImage(img)
+			return
+		}
+	}
 	splashImage, _, err = ebitenutil.NewImageFromFile("static/images/splashscreen.png")
 	if err != nil {
 		fmt.Printf("Failed to load splash image: %v\n", err)
