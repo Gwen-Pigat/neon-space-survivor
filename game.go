@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os/exec"
 	"runtime"
+	"strings"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
@@ -108,16 +109,22 @@ type Game struct {
 	overdriveTimer  int
 }
 
-func NewGame(start bool) *Game {
+func NewGame(start bool, existingScores *HighscoreManager) *Game {
 	if start {
 		LoadSplash()
 	}
+	
+	sm := existingScores
+	if sm == nil {
+		sm = NewHighscoreManager()
+	}
+
 	g := &Game{
 		player:          NewPlayer(),
 		particles:       NewParticleSystem(),
 		stars:           make([]Star, 150),
 		offscreen:       ebiten.NewImage(screenWidth, screenHeight),
-		scores:          NewHighscoreManager(),
+		scores:          sm,
 		showUI:          true,
 		autoAim:         false,
 		started:         !start, // If start is false (reset), then started is true
@@ -206,13 +213,20 @@ func (g *Game) HandleEndGame() error {
 		g.shakeFrames = 0
 		g.overdriveTimer = 0
 		if !g.saved {
-			// Handle name input
-			g.playerName += string(ebiten.AppendInputChars(nil))
+			for _, ch := range ebiten.AppendInputChars(nil) {
+				if ch >= 32 && ch != 127 && len(g.playerName) < 12 {
+					g.playerName += string(ch)
+				}
+			}
 			if inpututil.IsKeyJustPressed(ebiten.KeyBackspace) && len(g.playerName) > 0 {
 				g.playerName = g.playerName[:len(g.playerName)-1]
 			}
-			if inpututil.IsKeyJustPressed(ebiten.KeyEnter) && len(g.playerName) > 0 {
-				g.scores.AddScore(g.playerName, g.score, g.timer/60, g.victory, g.kills, int(g.gameMode))
+			if inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
+				name := strings.TrimSpace(g.playerName)
+				if name == "" {
+					name = "PLAYER"
+				}
+				g.scores.AddScore(name, g.score, g.timer/60, g.victory, g.kills, int(g.gameMode))
 				g.saved = true
 			}
 		} else {
@@ -799,40 +813,6 @@ func (g *Game) drawUI(screen *ebiten.Image) {
 			DrawNeonText(screen, hpStr, bx+barW/2, by+10, 10, color.RGBA{255, 255, 255, 255})
 		}
 	}
-	// Draw Top 5 Highscores
-	DrawNeonText(screen, "TOP SCORES", 80, 100, 15, color.RGBA{0, 255, 255, 255})
-	top := g.scores.GetTop(5, int(g.gameMode))
-	for i, entry := range top {
-		timeStr := fmt.Sprintf("%02d:%02d", entry.Time/60, entry.Time%60)
-		// Colored indicator: Green for Win, Red for Loss
-		indicatorClr := color.RGBA{255, 50, 50, 255}
-		if entry.Victory {
-			indicatorClr = color.RGBA{50, 255, 100, 255}
-		}
-
-		indOp := &ebiten.DrawImageOptions{}
-		indOp.GeoM.Scale(10, 10)
-		indOp.GeoM.Translate(20, float64(135+i*30))
-		indOp.ColorScale.ScaleWithColor(indicatorClr)
-		screen.DrawImage(whitePixel, indOp)
-
-		modeChar := "R"
-		switch entry.GameMode {
-		case int(ModeHard):
-			modeChar = "H"
-		case int(ModeBossRush):
-			modeChar = "B"
-		}
-
-		y := float64(140 + i*30)
-		clr := color.RGBA{255, 255, 255, 200}
-		DrawNeonTextLeft(screen, fmt.Sprintf("%d.", i+1), 40, y, 12, clr)
-		DrawNeonTextLeft(screen, entry.Name, 75, y, 12, clr)
-		DrawNeonTextLeft(screen, fmt.Sprintf("%06d", entry.Score), 190, y, 12, clr)
-		DrawNeonTextLeft(screen, timeStr, 270, y, 12, clr)
-		DrawNeonTextLeft(screen, fmt.Sprintf("K:%d", entry.Kills), 335, y, 12, clr)
-		DrawNeonTextLeft(screen, "M:"+modeChar, 400, y, 12, clr)
-	}
 	if g.gameOver || g.victory {
 		// Dim the background
 		if g.victory {
@@ -847,7 +827,7 @@ func (g *Game) drawUI(screen *ebiten.Image) {
 		}
 		DrawNeonText(screen, mainMsg, screenWidth/2, screenHeight/2-60, 40, color.RGBA{255, 255, 255, 255})
 		if !g.saved {
-			DrawNeonText(screen, "NEW HIGH SCORE!", screenWidth/2, screenHeight/2-20, 25, color.RGBA{255, 255, 0, 255})
+			DrawNeonText(screen, "GAME OVER", screenWidth/2, screenHeight/2-20, 25, color.RGBA{255, 255, 0, 255})
 			DrawNeonText(screen, "ENTER YOUR NAME:", screenWidth/2, screenHeight/2+10, 20, color.RGBA{255, 255, 255, 200})
 			DrawNeonText(screen, "> "+g.playerName+"_", screenWidth/2, screenHeight/2+40, 22, color.RGBA{0, 255, 255, 255})
 			DrawNeonText(screen, "PRESS ENTER TO SAVE", screenWidth/2, screenHeight/2+80, 18, color.RGBA{255, 255, 255, 150})
@@ -856,6 +836,58 @@ func (g *Game) drawUI(screen *ebiten.Image) {
 			DrawNeonText(screen, "SCORE SAVED!", screenWidth/2, screenHeight/2+30, 20, color.RGBA{0, 255, 100, 255})
 			DrawNeonText(screen, "PRESS 'R' TO RESTART", screenWidth/2, screenHeight/2+80, 18, color.RGBA{255, 255, 255, 150})
 		}
+	}
+
+	// Draw Top 10 Highscores (left-aligned at x=40 for clean formatting)
+	DrawNeonTextLeft(screen, "TOP SCORES", 40, 100, 14, color.RGBA{0, 255, 255, 255})
+	top := g.scores.GetTop(10, int(g.gameMode))
+	if len(top) == 0 {
+		DrawNeonTextLeft(screen, "NO SCORES YET", 40, 140, 11, color.RGBA{0, 255, 255, 200})
+	}
+	foundInTop := false
+	for i, entry := range top {
+		timeStr := fmt.Sprintf("%02d:%02d", entry.Time/60, entry.Time%60)
+		indicatorClr := color.RGBA{255, 50, 50, 255}
+		if entry.Victory {
+			indicatorClr = color.RGBA{50, 255, 100, 255}
+		}
+
+		indOp := &ebiten.DrawImageOptions{}
+		indOp.GeoM.Scale(10, 10)
+		indOp.GeoM.Translate(20, float64(135+i*28))
+		indOp.ColorScale.ScaleWithColor(indicatorClr)
+		screen.DrawImage(whitePixel, indOp)
+
+		modeChar := "R"
+		switch entry.GameMode {
+		case int(ModeHard):
+			modeChar = "H"
+		case int(ModeBossRush):
+			modeChar = "B"
+		}
+
+		y := float64(140 + i*28)
+		clr := color.RGBA{255, 255, 255, 200}
+		if g.saved && entry.Name == g.playerName && entry.Score == g.score {
+			clr = color.RGBA{255, 255, 0, 255} // Highlight newly saved score
+			foundInTop = true
+		}
+
+		DrawNeonTextLeft(screen, fmt.Sprintf("%d.", i+1), 40, y, 11, clr)
+		DrawNeonTextLeft(screen, entry.Name, 75, y, 11, clr)
+		DrawNeonTextLeft(screen, fmt.Sprintf("%06d", entry.Score), 190, y, 11, clr)
+		DrawNeonTextLeft(screen, timeStr, 270, y, 11, clr)
+		DrawNeonTextLeft(screen, fmt.Sprintf("K:%d", entry.Kills), 335, y, 11, clr)
+		DrawNeonTextLeft(screen, "M:"+modeChar, 400, y, 11, clr)
+	}
+
+	if g.saved && !foundInTop {
+		rank := g.scores.GetRank(g.score, int(g.gameMode))
+		y := float64(140 + len(top)*28)
+		if len(top) == 0 {
+			y += 28
+		}
+		DrawNeonTextLeft(screen, fmt.Sprintf("YOUR SCORE: %06d | RANK #%d", g.score, rank), 40, y, 11, color.RGBA{255, 255, 0, 255})
 	}
 }
 func drawWithGlow(screen *ebiten.Image, drawFunc func(*ebiten.Image), intensity float64) {
@@ -867,7 +899,7 @@ func drawWithGlow(screen *ebiten.Image, drawFunc func(*ebiten.Image), intensity 
 func (g *Game) Reset() {
 	ResetMusic()
 	currentMode := g.gameMode
-	newGame := NewGame(false)
+	newGame := NewGame(false, g.scores)
 	newGame.gameMode = currentMode
 	newGame.modeSelection = int(currentMode)
 	newGame.started = true

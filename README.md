@@ -53,5 +53,26 @@ The game uses a linear-to-exponential scaling curve:
    go run .
    ```
 
+## 🌐 Centralized Online Highscore Leaderboard
+
+The game supports a centralized multi-user online leaderboard allowing players on different installations to share scores.
+
+### Running the Leaderboard Server
+Start the central HTTP REST API server:
+```bash
+go run ./server
+```
+By default, the server runs on port `8080` and stores scores in `server_scores.db`. You can customize port and database path via environment variables:
+```bash
+PORT=8080 DB_PATH=my_scores.db go run ./server
+```
+
+### Running the Game Client
+The game automatically attempts to connect to `http://localhost:8080`. To connect to a remote hosted server:
+```bash
+SCORE_SERVER_URL=https://your-leaderboard-server.com go run .
+```
+If the server is unreachable, the game automatically falls back to local offline caching without interrupting gameplay.
+
 ---
 *Created with love by Gwen-Pigat and the Antigravity AI.*

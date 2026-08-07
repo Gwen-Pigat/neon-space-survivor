@@ -31,7 +31,8 @@ func main() {
 	ebiten.SetFullscreen(true)
 	InitAudio()
 	LoadSplash()
-	game := NewGame(true)
+	game := NewGame(true, nil)
+
 	if err := ebiten.RunGame(game); err != nil {
 		_ = os.WriteFile("game_error.log", []byte(err.Error()), 0644)
 		log.Fatal(err)

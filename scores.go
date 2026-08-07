@@ -1,52 +1,46 @@
 package main
 
 import (
-	"database/sql"
+	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"os"
 	"sort"
-
-	_ "modernc.org/sqlite"
+	"sync"
+	"time"
 )
 
 type ScoreEntry struct {
-	Name     string
-	Score    int
-	Time     int // Seconds
-	Victory  bool
-	Kills    int
-	GameMode int
+	ID       int    `json:"id,omitempty"`
+	Name     string `json:"name"`
+	Score    int    `json:"score"`
+	Time     int    `json:"time"`
+	Victory  bool   `json:"victory"`
+	Kills    int    `json:"kills"`
+	GameMode int    `json:"gamemode"`
 }
 
 type HighscoreManager struct {
-	db        *sql.DB
-	TopScores map[int][]ScoreEntry
+	serverURL  string
+	httpClient *http.Client
+	mu         sync.RWMutex
+	TopScores  map[int][]ScoreEntry
 }
 
 func NewHighscoreManager() *HighscoreManager {
+	serverURL := os.Getenv("SCORE_SERVER_URL")
+	if serverURL == "" {
+		serverURL = "http://localhost:3000"
+	}
+
 	hm := &HighscoreManager{
+		serverURL: serverURL,
+		httpClient: &http.Client{
+			Timeout: 3 * time.Second,
+		},
 		TopScores: make(map[int][]ScoreEntry),
-	}
-
-	db, err := sql.Open("sqlite", "scores.db")
-	if err != nil {
-		fmt.Printf("Failed to open database: %v\n", err)
-		return hm
-	}
-	hm.db = db
-
-	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS scores (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT,
-			score INTEGER,
-			time INTEGER,
-			victory BOOLEAN,
-			kills INTEGER,
-			gamemode INTEGER
-		)
-	`)
-	if err != nil {
-		fmt.Printf("Failed to create scores table: %v\n", err)
 	}
 
 	hm.ReloadTopScores()
@@ -54,50 +48,76 @@ func NewHighscoreManager() *HighscoreManager {
 }
 
 func (hm *HighscoreManager) ReloadTopScores() {
-	if hm.db == nil {
-		return
-	}
-	// Preload for modes 0, 1, 2
 	for mode := 0; mode <= 2; mode++ {
-		rows, err := hm.db.Query("SELECT name, score, time, victory, kills, gamemode FROM scores WHERE gamemode = ? ORDER BY score DESC LIMIT 10", mode)
-		if err != nil {
-			fmt.Printf("Query error for mode %d: %v\n", mode, err)
-			continue
-		}
-		
-		var scores []ScoreEntry
-		for rows.Next() {
-			var entry ScoreEntry
-			err = rows.Scan(&entry.Name, &entry.Score, &entry.Time, &entry.Victory, &entry.Kills, &entry.GameMode)
-			if err == nil {
-				scores = append(scores, entry)
+		url := fmt.Sprintf("%s/api/scores?gamemode=%d&limit=10", hm.serverURL, mode)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err == nil {
+			resp, err := hm.httpClient.Do(req)
+			if err == nil && resp.StatusCode == http.StatusOK {
+				var scores []ScoreEntry
+				if json.NewDecoder(resp.Body).Decode(&scores) == nil {
+					hm.mu.Lock()
+					hm.TopScores[mode] = scores
+					hm.mu.Unlock()
+				}
+				resp.Body.Close()
 			}
 		}
-		rows.Close()
-		hm.TopScores[mode] = scores
+		cancel()
 	}
 }
 
-func (hm *HighscoreManager) AddScore(name string, score int, time int, victory bool, kills int, gamemode int) {
-	if hm.db != nil {
-		_, err := hm.db.Exec("INSERT INTO scores (name, score, time, victory, kills, gamemode) VALUES (?, ?, ?, ?, ?, ?)", name, score, time, victory, kills, gamemode)
-		if err != nil {
-			fmt.Printf("Failed to insert score: %v\n", err)
-		}
-		hm.ReloadTopScores()
-	} else {
-		// Fallback for memory-only
-		hm.TopScores[gamemode] = append(hm.TopScores[gamemode], ScoreEntry{Name: name, Score: score, Time: time, Victory: victory, Kills: kills, GameMode: gamemode})
-		sort.Slice(hm.TopScores[gamemode], func(i, j int) bool {
-			return hm.TopScores[gamemode][i].Score > hm.TopScores[gamemode][j].Score
-		})
-		if len(hm.TopScores[gamemode]) > 10 {
-			hm.TopScores[gamemode] = hm.TopScores[gamemode][:10]
-		}
+func (hm *HighscoreManager) AddScore(name string, score int, timeSpent int, victory bool, kills int, gamemode int) {
+	entry := ScoreEntry{
+		Name:     name,
+		Score:    score,
+		Time:     timeSpent,
+		Victory:  victory,
+		Kills:    kills,
+		GameMode: gamemode,
 	}
+
+	// Update in-memory cache immediately for responsive UI
+	hm.mu.Lock()
+	hm.TopScores[gamemode] = append(hm.TopScores[gamemode], entry)
+	sort.Slice(hm.TopScores[gamemode], func(i, j int) bool {
+		return hm.TopScores[gamemode][i].Score > hm.TopScores[gamemode][j].Score
+	})
+	if len(hm.TopScores[gamemode]) > 10 {
+		hm.TopScores[gamemode] = hm.TopScores[gamemode][:10]
+	}
+	hm.mu.Unlock()
+
+	// Asynchronously submit to remote central server
+	go func() {
+		data, err := json.Marshal(entry)
+		if err != nil {
+			return
+		}
+		url := fmt.Sprintf("%s/api/scores", hm.serverURL)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(data))
+		if err != nil {
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := hm.httpClient.Do(req)
+		if err == nil {
+			resp.Body.Close()
+			// Refresh top scores from central DB after post completes
+			hm.ReloadTopScores()
+		}
+	}()
 }
 
 func (hm *HighscoreManager) GetTop(n int, gamemode int) []ScoreEntry {
+	hm.mu.RLock()
+	defer hm.mu.RUnlock()
+
 	scores := hm.TopScores[gamemode]
 	if len(scores) < n {
 		return scores
@@ -105,8 +125,40 @@ func (hm *HighscoreManager) GetTop(n int, gamemode int) []ScoreEntry {
 	return scores[:n]
 }
 
-func (hm *HighscoreManager) Close() {
-	if hm.db != nil {
-		hm.db.Close()
+func (hm *HighscoreManager) GetRank(score int, gamemode int) int {
+	// Query remote server for rank
+	url := fmt.Sprintf("%s/api/rank?gamemode=%d&score=%d", hm.serverURL, gamemode, score)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err == nil {
+		resp, err := hm.httpClient.Do(req)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			var result struct {
+				Rank int `json:"rank"`
+			}
+			if json.NewDecoder(resp.Body).Decode(&result) == nil {
+				resp.Body.Close()
+				return result.Rank
+			}
+			resp.Body.Close()
+		}
 	}
+
+	// Fallback using in-memory cached top scores
+	hm.mu.RLock()
+	defer hm.mu.RUnlock()
+
+	rank := 1
+	for _, entry := range hm.TopScores[gamemode] {
+		if entry.Score > score {
+			rank++
+		}
+	}
+	return rank
+}
+
+func (hm *HighscoreManager) Close() {
+	// No persistent resources to close in pure client mode
 }
